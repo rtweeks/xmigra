@@ -2483,7 +2483,7 @@ END_HEADER
       begin; section['Introduction', <<END_SECTION]
 
 %program_name is a tool designed to assist development of software using
-relational databases for persitent storage.  During the development cycle, this
+relational databases for persistent storage.  During the development cycle, this
 tool helps manage:
 
   - Migration of production databases to newer versions, including migration
@@ -2654,7 +2654,7 @@ objects (or at least, some kinds of access objects) may not reference access
 objects that do not yet exist.  (A good example is Microsoft SQL Server's rule
 about user defined functions that means a definition for the function A may
 only call the user defined function B if B exists when A is defined.)  To
-accomodate this situation, %program_name provides an optional "referencing"
+accommodate this situation, %program_name provides an optional "referencing"
 section in the access object definition file.  The content of this section
 must be a YAML sequence of scalars, each of which is the name of an access
 object file (the name must be given the same way the filename is written, not
@@ -2771,7 +2771,7 @@ of the scripts generated or the "build mode" of the application that may access
 the resulting database, but rather about the designation of the database
 to which the generated scripts may be applied.  "Production" scripts certainly
 should be tested in a non-production environment before they are applied to
-a production environment with irreplacable data.  But "development" scripts,
+a production environment with irreplaceable data.  But "development" scripts,
 by design, can never be run on production systems (so that the production
 systems only move from one well-documented state to another).
 END_SECTION
