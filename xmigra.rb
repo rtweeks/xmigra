@@ -363,6 +363,7 @@ module XMigra
       super()
       
       db_specifics = options[:db_specifics]
+      vcs_specifics = options[:vcs_specifics]
       
       head_info = YAML.load_file(File.join(path, HEAD_FILE))
       file = head_info[LATEST_CHANGE]
@@ -383,6 +384,7 @@ module XMigra
         migration = Migration.new(mig_info)
         migration.file_path = File.expand_path(fpath)
         migration.extend(db_specifics) if db_specifics
+        migration.extend(vcs_specifics) if vcs_specifics
         unshift(migration)
         prev_file = file
         file = migration.follows
@@ -1809,6 +1811,8 @@ END_OF_MESSAGE
   end
   
   module GitSpecifics
+    MASTER_HEAD_ATTRIBUTE = 'xmigra-master'
+    MASTER_BRANCH_SUBDIR = 'xmigra-master'
     
     class << self
       def manages(path)
@@ -1827,14 +1831,29 @@ END_OF_MESSAGE
         cmd_str = cmd_parts.join(' ')
         
         output = `#{cmd_str}`
+        return ($?.success? ? output : nil) if options[:get_result] == :on_success
         return $?.success? if check_exit
         raise(VersionControlError, "Git command failed with exit code #{$?.exitstatus}") unless $?.success?
         return output unless no_result
       end
+      
+      def attr_values(attr, path, options={})
+        value_list = run_git('check-attr', attr, '--', path).each_line.map do |line|
+          line.chomp.split(/: /, 3)[2]
+        end
+        return value_list unless options[:single]
+        raise VersionControlError, options[:single] + ' ambiguous' if value_list.length > 1
+        if (value_list.empty? || value_list == ['unspecified']) && options[:required]
+          raise VersionControlError, options[:single] + ' undefined'
+        end
+        return value_list[0]
+      end
     end
     
     def git(*args)
-      GitSpecifics.run_git(*args)
+      Dir.chdir(self.path) do |pwd|
+        GitSpecifics.run_git(*args)
+      end
     end
     
     def check_working_copy!
@@ -1843,11 +1862,12 @@ END_OF_MESSAGE
       file_paths = Array.from_generator(method(:each_file_path))
       unversioned_files = git(
         'diff-index',
-        %w{-z --no-commit-id --name-only},
-        git_schema_commit,
+        %w{-z --no-commit-id --name-only HEAD},
         '--',
         self.path
-      ).split("\000")
+      ).split("\000").collect do |path|
+        File.expand_path(self.path + path)
+      end
       
       # Check that file_paths and unversioned_files are disjoint
       unless (file_paths & unversioned_files).empty?
@@ -1875,10 +1895,103 @@ END_OF_MESSAGE
     
     def vcs_information
       return [
-        "Branch: #{branch}",
-        "Path: #{internal_path}",
+        "Branch: #{branch_identifier}",
+        "Path: #{git_internal_path}",
         "Commit: #{git_schema_commit}"
       ].join("\n")
+    end
+    
+    def branch_identifier
+      return self.git_branch_info[0]
+    end
+    
+    def branch_use(commit=nil)
+      if commit
+        self.git_fetch_master_branch
+        
+        # If there are no commits between the master head and *commit*, then
+        # *commit* is production-ish
+        return (self.git_commits_in? self.git_master_local_branch..commit) ? :production : :development
+      end
+      
+      return nil unless self.git_master_head(:required=>false)
+      
+      return self.git_branch_info[1]
+    end
+    
+    def vcs_move(old_path, new_path)
+      git(:mv, old_path, new_path, :get_result=>false)
+    end
+    
+    def vcs_remove(path)
+      git(:rm, path, :get_result=>false)
+    end
+    
+    def production_pattern
+      ".+"
+    end
+    
+    def production_pattern=(pattern)
+      raise VersionControlError, "Under version control by git, XMigra does not support production patterns."
+    end
+    
+    def get_conflict_info
+      structure_dir = Pathname.new(self.path) + SchemaManipulator::STRUCTURE_SUBDIR
+      head_file = structure_dir + MigrationChain::HEAD_FILE
+      stage_numbers = []
+      git('ls-files', '-uz', '--', head_file).split("\000").each {|ref|
+        if m = /[0-7]{6} [0-9a-f]{40} (\d)\t\S*/
+          stage_numbers |= [m[1].to_i]
+        end
+      }
+      return nil unless stage_numbers.sort == [1, 2, 3]
+      
+      chain_head = lambda do |stage_number|
+        return YAML.parse(
+          git(:show, ":#{stage_number}:#{head_file}")
+        ).transform
+      end
+      
+      # Ours (2) before theirs (3)...
+      heads = [2, 3].collect(&chain_head)
+      # ... unless merging from upstream
+      if self.git_merging_from_upstream?
+        heads.reverse!
+      end
+      
+      branch_point = chain_head.call(1)[MigrationChain::LATEST_CHANGE]
+      
+      conflict = MigrationConflict.new(structure_dir, branch_point, heads)
+      
+      # Standard git usage never commits directly to the master branch, and
+      # there is no effective way to tell if this is happening.
+      conflict.branch_use = :development
+      
+      tool = self
+      conflict.after_fix = proc {tool.resolve_conflict!(head_file)}
+      
+      return conflict
+    end
+    
+    def resolve_conflict!(path)
+      git(:add, '--', path, :get_result=>false)
+    end
+    
+    def git_master_head(options={})
+      options = {:required=>true}.merge(options)
+      return @git_master_head if defined? @git_master_head
+      master_head = GitSpecifics.attr_values(
+        MASTER_HEAD_ATTRIBUTE,
+        self.path,
+        :single=>'Master branch',
+        :required=>options[:required]
+      )
+      return nil if master_head.nil?
+      return @git_master_head = master_head
+    end
+    
+    def git_branch
+      return git('rev-parse', %w{--abbrev-ref HEAD}).chomp
     end
     
     def git_schema_commit
@@ -1886,6 +1999,65 @@ END_OF_MESSAGE
       reported_commit = git(:log, %w{-n1 --format=%H --}, self.path).chomp
       raise VersionControlError, "Schema not committed" if reported_commit.empty?
       return @git_commit = reported_commit
+    end
+    
+    def git_branch_info
+      return @git_branch_info if defined? @git_branch_info
+      
+      self.git_fetch_master_branch
+      
+      # If there are no commits between the master head and HEAD, this working
+      # copy is production-ish
+      return @git_branch_info = if self.branch_use('HEAD') == :production
+        [self.git_master_head, :production]
+      else
+        host = `hostname`
+        path = git('rev-parse', '--show-toplevel')
+        ["#{git_branch} of #{path} on #{host} (commit #{git_schema_commit})", :development]
+      end
+    end
+    
+    def git_fetch_master_branch
+      master_url, remote_branch = self.git_master_head.split('#', 2)
+      
+      git(:fetch, '-f', master_url, "#{remote_branch}:#{git_master_local_branch}", :get_result=>false)
+    end
+    
+    def git_master_local_branch
+      "#{MASTER_BRANCH_SUBDIR}/#{git_branch}"
+    end
+    
+    def git_internal_path
+      return @git_internal_path if defined? @git_internal_path
+      path_prefix = git('rev-parse', %w{--show-prefix}).chomp[0..-2]
+      internal_path = '.'
+      if path_prefix.length > 0
+        internal_path += '/' + path_prefix
+      end
+      return @git_internal_path = internal_path
+    end
+    
+    def git_merging_from_upstream?
+      upstream = git('rev-parse', '@{u}')
+      return false if upstream.nil?
+      
+      # Check if there are any commits in #{upstream}..MERGE_HEAD
+      begin
+        return !(self.git_commits_in? upstream..'MERGE_HEAD')
+      rescue VersionControlError
+        return false
+      end
+    end
+    
+    def git_commits_in?(range)
+      git(
+        :log,
+        '--pretty=format:%H',
+        '-1',
+        "#{range.begin}..#{range.end}",
+        '--',
+        self.path
+      ) != ''
     end
   end
 
@@ -1912,6 +2084,7 @@ END_OF_MESSAGE
       
       extend(@vcs_specifics = [
         SubversionSpecifics,
+        GitSpecifics,
       ].find {|s| s.manages(path)} || NoSpecifics)
     end
     
