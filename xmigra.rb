@@ -1902,7 +1902,16 @@ END_OF_MESSAGE
     end
     
     def branch_identifier
-      return self.git_branch_info[0]
+      return (if self.production
+        self.git_branch_info[0]
+      else
+        return @git_branch_identifier if defined? @git_branch_identifier
+        
+        @git_branch_identifier = (
+          self.git_master_head(:required=>false) ||
+          self.git_local_branch_identifier(:note_modifications=>true)
+        )
+      end)
     end
     
     def branch_use(commit=nil)
@@ -2011,10 +2020,14 @@ END_OF_MESSAGE
       return @git_branch_info = if self.branch_use('HEAD') == :production
         [self.git_master_head, :production]
       else
-        host = `hostname`
-        path = git('rev-parse', '--show-toplevel')
-        ["#{git_branch} of #{path} on #{host} (commit #{git_schema_commit})", :development]
+        [self.git_local_branch_identifier, :development]
       end
+    end
+    
+    def git_local_branch_identifier(options={})
+      host = `hostname`
+      path = git('rev-parse', '--show-toplevel')
+      return "#{git_branch} of #{path} on #{host} (commit #{git_schema_commit})"
     end
     
     def git_fetch_master_branch
