@@ -213,6 +213,8 @@ module XMigra
     raise
   end
   
+  class SchemaError < Error; end
+  
   class AccessArtifact
     def definition_sql
       [
@@ -303,6 +305,8 @@ module XMigra
       when "stored procedure" then StoredProcedure.new(info)
       when "view" then View.new(info)
       when "function" then Function.new(info)
+      else
+        raise SchemaError, "'define' not specified for access artifact '#{info['name']}'"
       end
     end
     
@@ -1984,6 +1988,7 @@ END_OF_MESSAGE
         raise VersionControlError, "Some source files differ from their committed versions"
       end
       
+      git_fetch_master_branch
       migrations.each do |m|
         # Check that the migration has not changed in the currently checked-out branch
         fpath = m.file_path
@@ -1996,10 +2001,8 @@ END_OF_MESSAGE
       
       # Since a production script was requested, warn if we are not generating
       # from a production branch
-      if branch_use != :production and self.respond_to? :warning
-        self.warning(<<END_OF_MESSAGE)
-The branch backing the target working copy is not marked as a production branch.
-END_OF_MESSAGE
+      if branch_use != :production
+        raise VersionControlError, "The working tree is not a commit in the master history."
       end
     end
     
@@ -2030,7 +2033,7 @@ END_OF_MESSAGE
         
         # If there are no commits between the master head and *commit*, then
         # *commit* is production-ish
-        return (self.git_commits_in? self.git_master_local_branch..commit) ? :production : :development
+        return (self.git_commits_in? self.git_master_local_branch..commit) ? :development : :production
       end
       
       return nil unless self.git_master_head(:required=>false)
@@ -2101,7 +2104,7 @@ END_OF_MESSAGE
       return @git_master_head if defined? @git_master_head
       master_head = GitSpecifics.attr_values(
         MASTER_HEAD_ATTRIBUTE,
-        self.path,
+        self.path + SchemaManipulator::DBINFO_FILE,
         :single=>'Master branch',
         :required=>options[:required]
       )
@@ -2110,7 +2113,8 @@ END_OF_MESSAGE
     end
     
     def git_branch
-      return git('rev-parse', %w{--abbrev-ref HEAD}).chomp
+      return @git_branch if defined? @git_branch
+      return @git_branch = git('rev-parse', %w{--abbrev-ref HEAD}).chomp
     end
     
     def git_schema_commit
@@ -2127,11 +2131,11 @@ END_OF_MESSAGE
       
       # If there are no commits between the master head and HEAD, this working
       # copy is production-ish
-      return @git_branch_info = if self.branch_use('HEAD') == :production
+      return (@git_branch_info = if self.branch_use('HEAD') == :production
         [self.git_master_head, :production]
       else
         [self.git_local_branch_identifier, :development]
-      end
+      end)
     end
     
     def git_local_branch_identifier(options={})
@@ -2141,9 +2145,11 @@ END_OF_MESSAGE
     end
     
     def git_fetch_master_branch
+      return if @git_master_branch_fetched
       master_url, remote_branch = self.git_master_head.split('#', 2)
       
-      git(:fetch, '-f', master_url, "#{remote_branch}:#{git_master_local_branch}", :get_result=>false)
+      git(:fetch, '-f', master_url, "#{remote_branch}:#{git_master_local_branch}", :get_result=>false, :quiet=>true)
+      @git_master_branch_fetched = true
     end
     
     def git_master_local_branch
@@ -2172,14 +2178,14 @@ END_OF_MESSAGE
       end
     end
     
-    def git_commits_in?(range)
+    def git_commits_in?(range, path=nil)
       git(
         :log,
         '--pretty=format:%H',
         '-1',
         "#{range.begin.strip}..#{range.end.strip}",
         '--',
-        self.path
+        path || self.path
       ) != ''
     end
   end

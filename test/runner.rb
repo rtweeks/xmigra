@@ -48,7 +48,7 @@ class Integer
     tmpdirs = []
     begin
       (1..self).each do |i|
-        tmpdirs << Dir.mktmpdir([prefix, ".#{i}"])
+        tmpdirs << Pathname(Dir.mktmpdir([prefix, ".#{i}"]))
       end
       
       yield(*tmpdirs)
@@ -69,11 +69,11 @@ def do_or_die(command, message=nil, exc_type=Exception)
   $?.success? || raise(exc_type, message || ("Unable to " + command + "\n" + output))
 end
 
-def initialize_xmigra_schema(path='.')
+def initialize_xmigra_schema(path='.', options={})
   (Pathname(path) + XMigra::SchemaManipulator::DBINFO_FILE).open('w') do |f|
     YAML.dump({
       'system' => $xmigra_test_system,
-    }, f)
+    }.merge(options[:db_info] || {}), f)
   end
 end
 
@@ -98,11 +98,26 @@ def assert_eq(actual, expected)
 end
 
 def assert_neq(actual, expected)
-  assert(proc {"#{actual.inspect} was equal to #{expected.inspect}"}) {actual != expected}
+  assert(proc {"Value #{actual.inspect} was unexpected"}) {actual != expected}
 end
 
 def assert_include(container, item)
   assert(proc {"#{item.inspect} was not in #{container.inspect}"}) {container.include? item}
+end
+
+def assert_raises(expected_exception)
+  begin
+    yield
+  rescue Exception => ex
+    assert("#{ex.class} is not #{expected_exception}") {ex.is_a? expected_exception}
+    return
+  end
+  
+  assert("No #{expected_exception} raised") {false}
+end
+
+def assert_noraises
+  yield
 end
 
 TESTS.each {|t| require "test/#{t}"}
