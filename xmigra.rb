@@ -50,17 +50,122 @@ class Pathname
 end
 
 # Make YAML scalars dump back out in the same style they were when read in
-class YAML::Syck::Node
-  alias_method :orig_transform_Lorjiardaik9, :transform
-  def transform
-    tv = orig_transform_Lorjiardaik9
-    if tv.kind_of? String and @style
-      node_style = @style
-      tv.define_singleton_method(:to_yaml_style) {node_style}
+if defined? YAML::Syck
+  class YAML::Syck::Node
+    alias_method :orig_transform_Lorjiardaik9, :transform
+    def transform
+      tv = orig_transform_Lorjiardaik9
+      if tv.kind_of? String and @style
+        node_style = @style
+        tv.define_singleton_method(:to_yaml_style) {node_style}
+      end
+      return tv
     end
-    return tv
   end
+  
+  if defined? YAML::ENGINE.yamler
+    previous = YAML::ENGINE.yamler
+    YAML::ENGINE.yamler = 'syck'
+    YAML::ENGINE.yamler = previous
+    $xmigra_yamler = Syck
+  else
+    $xmigra_yamler = YAML
+  end
+
+elsif defined? Psych
+  class Psych::Nodes::Scalar
+    alias_method :orig_transform_Lorjiardaik9, :transform
+    def transform
+      tv = orig_transform_Lorjiardaik9
+      if @style
+        node_style = @style
+        tv.define_singleton_method(:yaml_style) {node_style}
+      end
+      return tv
+    end
+  end
+  
+  module YAMLRepro
+    class TreeBuilder < Psych::TreeBuilder
+      Scalar = ::Psych::Nodes::Scalar
+      
+      attr_writer :next_collection_style
+      
+      def initialize(*args)
+        super
+        @next_collection_style = nil
+      end
+      
+      def next_collection_style(default_style)
+        style = @next_collection_style || default_style
+        @next_collection_style = nil
+        style
+      end
+      
+      def scalar(value, anchor, tag, plain, quoted, style)
+        if style_any?(style) and value.respond_to?(:yaml_style) and style = value.yaml_style
+          if style_block_scalar?(style)
+            plain = false
+            quoted = true
+          end
+        end
+        super
+      end
+      
+      def style_any?(style)
+        Scalar::ANY == style
+      end
+      
+      def style_block_scalar?(style)
+        [Scalar::LITERAL, Scalar::FOLDED].include? style
+      end
+      
+      %w[sequence mapping].each do |node_type|
+        class_eval <<-RUBY
+          def start_#{node_type}(anchor, tag, implicit, style)
+            style = next_collection_style(style)
+            super
+          end
+        RUBY
+      end
+    end
+    
+    # Custom tree class to handle Hashes and Arrays tagged with `yaml_style`
+    class YAMLTree < Psych::Visitors::YAMLTree
+      %w[Hash Array Psych_Set Psych_Omap].each do |klass|
+        class_eval <<-RUBY
+          def visit_#{klass} o
+            if o.respond_to? :yaml_style
+              @emitter.next_sequence_or_mapping_style = o.yaml_style
+            end
+            super
+          end
+        RUBY
+      end
+    end
+    
+    def self.dump(data_root, io=nil, options={})
+      real_io = io || StringIO.new(''.encode('utf-8'))
+      visitor = YAMLTree.new(options, TreeBuilder.new)
+      visitor << data_root
+      ast = visitor.tree
+      
+      begin
+        ast.yaml real_io
+      rescue
+        Psych::Visitors::Emitter.new(real_io).accept ast
+      end
+      
+      io || real_io.string
+    end
+  end
+  
+  $xmigra_yamler = YAMLRepro
+  
+else
+  $xmigra_yamler = YAML
 end
+
 
 module XMigra
   FORMALIZATIONS = {
@@ -465,12 +570,12 @@ module XMigra
       # Rewrite the head file
       head_info = @heads[0].merge(@heads[1]) # This means @heads[1]'s LATEST_CHANGE wins
       File.open(@path.join(MigrationChain::HEAD_FILE), 'w') do |f|
-        YAML.dump(head_info, f)
+        $xmigra_yamler.dump(head_info, f)
       end
       
       # Rewrite the first migration (on the current branch) after @branch_point
       File.open(@path.join(file_to_fix), 'w') do |f|
-        YAML.dump(fixed_contents, f)
+        $xmigra_yamler.dump(fixed_contents, f)
       end
       
       if @after_fix
@@ -1826,8 +1931,13 @@ END_OF_MESSAGE
         
         cmd_parts = ["git", subcmd.to_s]
         cmd_parts.concat(
-          args.flatten.collect {|a| '""'.insert(1, a)}
+          args.flatten.collect {|a| '""'.insert(1, a.to_s)}
         )
+        case PLATFORM
+        when :unix
+          cmd_parts << "2>/dev/null"
+        end if options[:quiet]
+        
         cmd_str = cmd_parts.join(' ')
         
         output = `#{cmd_str}`
@@ -1949,7 +2059,7 @@ END_OF_MESSAGE
       head_file = structure_dir + MigrationChain::HEAD_FILE
       stage_numbers = []
       git('ls-files', '-uz', '--', head_file).split("\000").each {|ref|
-        if m = /[0-7]{6} [0-9a-f]{40} (\d)\t\S*/
+        if m = /[0-7]{6} [0-9a-f]{40} (\d)\t\S*/.match(ref)
           stage_numbers |= [m[1].to_i]
         end
       }
@@ -2051,7 +2161,7 @@ END_OF_MESSAGE
     end
     
     def git_merging_from_upstream?
-      upstream = git('rev-parse', '@{u}')
+      upstream = git('rev-parse', '@{u}', :get_result=>:on_success, :quiet=>true)
       return false if upstream.nil?
       
       # Check if there are any commits in #{upstream}..MERGE_HEAD
@@ -2067,7 +2177,7 @@ END_OF_MESSAGE
         :log,
         '--pretty=format:%H',
         '-1',
-        "#{range.begin}..#{range.end}",
+        "#{range.begin.strip}..#{range.end.strip}",
         '--',
         self.path
       ) != ''
@@ -2324,17 +2434,17 @@ RUNNING THIS SCRIPT ON A PRODUCTION DATABASE WILL FAIL.
       old_head_info = head_info.dup
       head_info[MigrationChain::LATEST_CHANGE] = new_fpath.basename('.yaml').to_s
       File.open(head_file, "w") do |f|
-        YAML.dump(head_info, f)
+        $xmigra_yamler.dump(head_info, f)
       end
       
       begin
         File.open(new_fpath, "w") do |f|
-          YAML.dump(new_data, f)
+          $xmigra_yamler.dump(new_data, f)
         end
       rescue
         # Revert the head file to it's previous state
         File.open(head_file, "w") do |f|
-          YAML.dump(old_head_info, f)
+          $xmigra_yamler.dump(old_head_info, f)
         end
         
         raise
@@ -2431,6 +2541,13 @@ RUNNING THIS SCRIPT ON A PRODUCTION DATABASE WILL FAIL.
     def to_yaml_style
       :fold
     end
+    
+    if defined? Psych
+      def yaml_style
+        Psych::Nodes::Scalar::FOLDED
+      end
+    end
+    
   end
   
   class Program

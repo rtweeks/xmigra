@@ -5,6 +5,7 @@ require 'stringio'
 require 'tmpdir'
 
 TESTS = %w[
+  git_vcs
 ]
 
 $:.unshift Pathname(__FILE__).expand_path.dirname.dirname
