@@ -1,0 +1,13 @@
+#!/usr/bin/env ruby
+
+require 'xmigra'
+
+XMigra::Program.run(
+  ARGV,
+  :error=>proc do |e|
+    STDERR.puts("#{e} (#{e.class})") unless e.is_a?(XMigra::Program::QuietError)
+    exit(2) if e.is_a?(OptionParser::ParseError)
+    exit(2) if e.is_a?(XMigra::Program::ArgumentError)
+    exit(1)
+  end
+)
