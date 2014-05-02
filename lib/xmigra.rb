@@ -17,6 +17,8 @@ require "rexml/document"
 require "tsort"
 require "yaml"
 
+require "xmigra/version"
+
 unless Object.instance_methods.include? :define_singleton_method
   class Object
     def define_singleton_method(name, &body)
@@ -3479,16 +3481,20 @@ END_OF_HELP
       end
     end
   end
+  
+  def self.command_line_program
+    XMigra::Program.run(
+      ARGV,
+      :error=>proc do |e|
+        STDERR.puts("#{e} (#{e.class})") unless e.is_a?(XMigra::Program::QuietError)
+        exit(2) if e.is_a?(OptionParser::ParseError)
+        exit(2) if e.is_a?(XMigra::Program::ArgumentError)
+        exit(1)
+      end
+    )
+  end
 end
 
 if $0 == __FILE__
-  XMigra::Program.run(
-    ARGV,
-    :error=>proc do |e|
-      STDERR.puts("#{e} (#{e.class})") unless e.is_a?(XMigra::Program::QuietError)
-      exit(2) if e.is_a?(OptionParser::ParseError)
-      exit(2) if e.is_a?(XMigra::Program::ArgumentError)
-      exit(1)
-    end
-  )
+  XMigra.command_line_program
 end
