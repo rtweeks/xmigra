@@ -1,0 +1,5 @@
+#!/usr/bin/env ruby
+
+require 'xmigra'
+
+XMigra.command_line_program
