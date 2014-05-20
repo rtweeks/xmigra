@@ -1,5 +1,6 @@
 #!/usr/bin/env ruby
 require 'fileutils'
+require 'ostruct'
 require 'pathname'
 require 'stringio'
 require 'tmpdir'
@@ -8,6 +9,7 @@ TESTS = %w[
   git_vcs
 ]
 
+$:.unshift Pathname(__FILE__).expand_path.dirname.dirname + 'lib'
 $:.unshift Pathname(__FILE__).expand_path.dirname.dirname
 require 'xmigra'
 
@@ -17,7 +19,21 @@ $tests_failed = []
 
 $xmigra_test_system = 'Microsoft SQL Server'
 
+class AssertionFailure < Exception; end
+
+class UnexpectedExceptionFailure < AssertionFailure
+  def initialize(msg, original=nil)
+    super(msg)
+    @original = original
+    set_backtrace(original.backtrace) if original
+  end
+  
+  attr_reader :original
+end
+
 def run_test(name, &block)
+  return unless $test_selectors.empty? || $test_selectors.any? {|selector| selector === name}
+  
   $test_count += 1
   
   if child_pid = Process.fork
@@ -34,6 +50,8 @@ def run_test(name, &block)
     begin
       block.call
       exit! 0
+    rescue AssertionFailure
+      exit! 2
     rescue
       puts
       puts "Exception: #{$!}"
@@ -77,8 +95,6 @@ def initialize_xmigra_schema(path='.', options={})
   end
 end
 
-class AssertionFailure < Exception; end
-
 def assert(message=nil, &block)
   get_message = proc {
     if !message and File.exist?(block.source_location[0])
@@ -120,10 +136,43 @@ def assert_noraises
   yield
 end
 
+class TestNamePrinter
+  def ===(v)
+    puts "    #{v}"
+    return false
+  end
+end
+
+$test_options = OpenStruct.new
+$test_options.show_counts = true
+$test_selectors = (if __FILE__ == $0
+  [].tap do |selectors|
+    
+    args = ARGV.dup
+    until args.empty? do
+      case
+      when args[0] == '--list'
+        $test_options.list_tests = true
+        $test_options.show_counts = false
+        args.shift
+      when args[0].start_with?('re:')
+        selectors << Regexp.new(args.shift[3..-1])
+      else
+        selectors << args.shift
+      end
+    end
+    
+    if $test_options.list_tests
+      selectors.replace [TestNamePrinter.new]
+    end
+  end
+else
+  [Object]
+end)
+
 TESTS.each {|t| require "test/#{t}"}
 
 puts
-puts "#{$test_successes}/#{$test_count} succeeded"
+puts "#{$test_successes}/#{$test_count} succeeded" if $test_options.show_counts
 puts "Failed tests:" unless $tests_failed.empty?
 $tests_failed.each {|name| puts "    #{name}"}
-
