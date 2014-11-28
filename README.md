@@ -1,4 +1,4 @@
-# XMigra
+# XMigra [![Gem Version](https://badge.fury.io/rb/xmigra.svg)](http://badge.fury.io/rb/xmigra)
 
 The world of persistent data is a wild and wooly place.  Let XMigra make it
 easier!
