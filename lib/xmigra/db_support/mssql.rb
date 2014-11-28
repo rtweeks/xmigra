@@ -47,7 +47,7 @@ module XMigra
         return @stats_objs = [].freeze
       end
       
-      @stats_objs = stats_data.collect(&StatisticsObject.method(:new))
+      @stats_objs = stats_data.collect {|item| StatisticsObject.new(*item)}
       @stats_objs.each {|o| o.freeze}
       @stats_objs.freeze
       
@@ -319,9 +319,9 @@ INSERT INTO [xmigra].[updated_indexes] ([IndexID]) VALUES
       END_OF_SQL
       
       strlit = MSSQLSpecifics.method :string_literal
-      return intro + insertion + indexes.collect do |index|
+      return intro + (insertion + indexes.collect do |index|
         "(#{strlit[index.id]})"
-      end.join(",\n") + ";\n" unless indexes.empty?
+      end.join(",\n") + ";\n" unless indexes.empty?).to_s
       
       return intro
     end
@@ -352,9 +352,9 @@ INSERT INTO [xmigra].[updated_statistics] ([Name], [Columns]) VALUES
       END_OF_SQL
       
       strlit = MSSQLSpecifics.method :string_literal
-      return intro + insertion + stats_objs.collect do |stats_obj|
+      return intro + (insertion + stats_objs.collect do |stats_obj|
         "(#{strlit[stats_obj.name]}, #{strlit[stats_obj.columns]})"
-      end.join(",\n") + ";\n" unless stats_objs.empty?
+      end.join(",\n") + ";\n" unless stats_objs.empty?).to_s
     end
     
     def check_preceding_migrations_sql
@@ -959,6 +959,8 @@ EXISTS (
     end
     
     def upgrading_to_new_branch_test_sql
+      return "(0 = 1)" unless respond_to? :branch_identifier
+      
       (<<-"END_OF_SQL").chomp
 (EXISTS (
   SELECT TOP(1) * FROM [xmigra].[branch_upgrade]
@@ -968,6 +970,8 @@ EXISTS (
     end
     
     def branch_upgrade_sql
+      return unless respond_to? :branch_identifier
+      
       parts = [<<-"END_OF_SQL"]
 IF #{upgrading_to_new_branch_test_sql}
 BEGIN
