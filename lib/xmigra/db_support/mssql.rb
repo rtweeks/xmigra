@@ -322,8 +322,6 @@ INSERT INTO [xmigra].[updated_indexes] ([IndexID]) VALUES
       return intro + (insertion + indexes.collect do |index|
         "(#{strlit[index.id]})"
       end.join(",\n") + ";\n" unless indexes.empty?).to_s
-      
-      return intro
     end
     
     def create_and_fill_statistics_table_sql
@@ -392,7 +390,7 @@ BEGIN
       SELECT m.[MigrationID] FROM [xmigra].[migrations] m
     )
   )
-  RAISERROR (N'Unknown in-version migrations have been applied.', 11, 1);
+  RAISERROR (N'Unknown in-branch migrations have been applied.', 11, 1);
 END;
       END_OF_SQL
       
