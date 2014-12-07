@@ -30,7 +30,7 @@ module XMigra
       
       new_data = {
         Migration::FOLLOWS=>head_info.fetch(MigrationChain::LATEST_CHANGE, Migration::EMPTY_DB),
-        'sql'=>options.fetch(:sql, "<<<<< INSERT SQL HERE >>>>>\n"),
+        'sql'=>options.fetch(:sql, "<<<<< INSERT SQL HERE >>>>>\n").dup.extend(LiteralYamlStyle),
         'description'=>options.fetch(:description, "<<<<< DESCRIPTION OF MIGRATION >>>>>").dup.extend(FoldedYamlStyle),
         Migration::CHANGES=>options.fetch(:changes, ["<<<<< WHAT THIS MIGRATION CHANGES >>>>>"]),
       }
