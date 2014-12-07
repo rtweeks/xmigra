@@ -27,7 +27,12 @@ module XMigra
         
         cmd_str = cmd_parts.join(' ')
         
-        output = `#{cmd_str}`
+        output = begin
+          `#{cmd_str}`
+        rescue
+          return false if check_exit
+          raise
+        end
         return ($?.success? ? output : nil) if options[:get_result] == :on_success
         return $?.success? if check_exit
         raise(VersionControlError, "Git command failed with exit code #{$?.exitstatus}") unless $?.success?
