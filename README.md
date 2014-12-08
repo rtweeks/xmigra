@@ -40,7 +40,7 @@ easier!
 
 **Databases**
 * Microsoft SQL Server (2005 and later)
-* PostgreSQL (coming soon)
+* PostgreSQL (tested on 9.3, should work for 8.4 or later)
 
 ## Tell Me More!
 

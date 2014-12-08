@@ -283,6 +283,18 @@ module XMigra
     
   end
   
+  module LiteralYamlStyle
+    def to_yaml_style
+      :literal
+    end
+    
+    if defined? Psych
+      def yaml_style
+        Psych::Nodes::Scalar::LITERAL
+      end
+    end
+  end
+  
   def self.command_line_program
     XMigra::Program.run(
       ARGV,
@@ -300,6 +312,7 @@ require 'xmigra/vcs_support/svn'
 require 'xmigra/vcs_support/git'
 
 require 'xmigra/db_support/mssql'
+require 'xmigra/db_support/psql'
 
 require 'xmigra/access_artifact'
 require 'xmigra/stored_procedure'
