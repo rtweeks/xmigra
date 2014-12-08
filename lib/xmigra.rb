@@ -312,6 +312,7 @@ require 'xmigra/vcs_support/svn'
 require 'xmigra/vcs_support/git'
 
 require 'xmigra/db_support/mssql'
+require 'xmigra/db_support/psql'
 
 require 'xmigra/access_artifact'
 require 'xmigra/stored_procedure'
