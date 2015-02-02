@@ -1,3 +1,5 @@
+require 'pathname'
+require 'xmigra/revert_file'
 
 module XMigra
   class Migration
@@ -17,6 +19,15 @@ module XMigra
     
     attr_reader :id, :follows, :sql, :description, :changes
     attr_accessor :file_path
+    
+    def schema_dir
+      Pathname(file_path).dirname.join('..')
+    end
+    
+    def reversion
+      result = RevertFile.new(self)
+      return result if result.exist?
+    end
     
     class << self
       def id_from_filename(fname)

@@ -12,6 +12,8 @@ module XMigra
     $/ix
     STATISTICS_FILE = 'statistics-objects.yaml'
     
+    ID_COLLATION = 'Latin1_General_CS_AS'
+    
     class StatisticsObject
       def initialize(name, params)
         (@name = name.dup).freeze
@@ -153,7 +155,7 @@ IF NOT EXISTS (
 )
 BEGIN
   CREATE TABLE [xmigra].[applied] (
-    [MigrationID]            nvarchar(80) NOT NULL,
+    [MigrationID]            nvarchar(80) COLLATE #{ID_COLLATION} NOT NULL,
     [ApplicationOrder]       int IDENTITY(1,1) NOT NULL,
     [VersionBridgeMark]      bit NOT NULL,
     [Description]            nvarchar(max) NOT NULL,
@@ -168,6 +170,45 @@ BEGIN
       ALLOW_PAGE_LOCKS = ON
     ) ON [PRIMARY]
   ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY];
+END;
+GO
+
+IF NOT EXISTS (
+  SELECT * FROM sys.columns
+  WHERE object_id = OBJECT_ID(N'[xmigra].[applied]')
+  AND name = N'MigrationID'
+  AND collation_name = N'#{ID_COLLATION}'
+)
+BEGIN
+  ALTER TABLE xmigra.applied DROP CONSTRAINT PK_version;
+  ALTER TABLE xmigra.applied ALTER COLUMN [MigrationID] nvarchar(80) COLLATE Latin1_General_CS_AS NOT NULL;
+  ALTER TABLE xmigra.applied ADD CONSTRAINT PK_version PRIMARY KEY ([MigrationID] ASC) WITH (
+    PAD_INDEX = OFF,
+    STATISTICS_NORECOMPUTE  = OFF,
+    IGNORE_DUP_KEY = OFF,
+    ALLOW_ROW_LOCKS = ON,
+    ALLOW_PAGE_LOCKS = ON
+  ) ON [PRIMARY];
+END;
+
+IF NOT EXISTS (
+  SELECT * FROM sys.objects
+  WHERE object_id = OBJECT_ID(N'[xmigra].[previous_states]')
+  AND type IN (N'U')
+)
+BEGIN
+  CREATE TABLE [xmigra].[previous_states] (
+    [Changed]                   datetime NOT NULL,
+    [MigrationApplicationOrder] int NOT NULL,
+    [FromMigrationID]           nvarchar(80) COLLATE #{ID_COLLATION},
+    [ToRangeStartMigrationID]   nvarchar(80) COLLATE #{ID_COLLATION} NOT NULL,
+    [ToRangeEndMigrationID]     nvarchar(80) COLLATE #{ID_COLLATION} NOT NULL,
+    
+    CONSTRAINT [PK_previous_states] PRIMARY KEY CLUSTERED (
+      [Changed] ASC,
+      [MigrationApplicationOrder] ASC
+    )
+  );
 END;
 GO
 
@@ -244,6 +285,30 @@ BEGIN
     [CompletesMigration] nvarchar(80) NULL
   ) ON [PRIMARY];
 END;
+
+IF EXISTS (
+  SELECT * FROM sys.objects
+  WHERE object_id = OBJECT_ID(N'[xmigra].[last_applied_migrations]')
+  AND type IN (N'V')
+)
+BEGIN
+  DROP VIEW [xmigra].[last_applied_migrations];
+END;
+GO
+
+CREATE VIEW [xmigra].[last_applied_migrations] AS
+SELECT
+  ROW_NUMBER() OVER (ORDER BY a.[ApplicationOrder] DESC) AS [RevertOrder],
+  a.[Description]
+FROM
+  [xmigra].[applied] a
+WHERE
+  a.[ApplicationOrder] > COALESCE((
+    SELECT TOP (1) ps.[MigrationApplicationOrder]
+    FROM [xmigra].[previous_states] ps
+    JOIN [xmigra].[applied] a2 ON ps.[ToRangeStartMigrationID] = a2.[MigrationID]
+    ORDER BY ps.[Changed] DESC
+  ), 0);
       END_OF_SQL
     end
     
@@ -260,7 +325,7 @@ END;
 GO
 
 CREATE TABLE [xmigra].[migrations] (
-  [MigrationID]            nvarchar(80) NOT NULL,
+  [MigrationID]            nvarchar(80) COLLATE #{ID_COLLATION} NOT NULL,
   [ApplicationOrder]       int NOT NULL,
   [Description]            ntext NOT NULL,
   [Install]                bit NOT NULL DEFAULT(0)
@@ -472,6 +537,38 @@ ELSE BEGIN
   )
   AND [ApplicationOrder] > @BridgePoint;
 END;
+
+INSERT INTO [xmigra].[previous_states] (
+  [Changed],
+  [MigrationApplicationOrder],
+  [FromMigrationID],
+  [ToRangeStartMigrationID],
+  [ToRangeEndMigrationID]
+)
+SELECT TOP (1)
+  CURRENT_TIMESTAMP,
+  -- Application order of last installed migration --
+  COALESCE(
+    ( 
+      SELECT TOP(1) [ApplicationOrder] FROM [xmigra].[applied]
+      ORDER BY [ApplicationOrder] DESC
+    ),
+    0
+  ),
+  ( -- Last installed migration --
+    SELECT TOP (1) [MigrationID]
+    FROM [xmigra].[applied]
+    ORDER BY [ApplicationOrder] DESC
+  ),
+  m.[MigrationID],
+  ( -- Last migration to install --
+    SELECT TOP(1) [MigrationID] FROM [xmigra].[migrations]
+    WHERE [Install] <> 0
+    ORDER BY [ApplicationOrder] DESC
+  )
+FROM [xmigra].[migrations] m
+WHERE m.[Install] <> 0
+ORDER BY m.[ApplicationOrder] ASC;
       END_OF_SQL
     end
     
@@ -883,6 +980,10 @@ END;
       return (template % parts.collect do |batch|
         "EXEC sp_executesql @statement = " + MSSQLSpecifics.string_literal(batch) + ";"
       end.join("\n"))
+    end
+    
+    def reversion_tracking_sql
+      "DELETE FROM [xmigra].[applied] WHERE [MigrationID] = '#{id}';\n"
     end
     
     def each_batch(sql)

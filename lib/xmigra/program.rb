@@ -184,7 +184,7 @@ END_OF_HELP
       
       def output_to(fpath_or_nil)
         if fpath_or_nil.nil?
-          yield(STDOUT)
+          yield($stdout)
         else
           File.open(fpath_or_nil, "w") do |stream|
             yield(stream)
@@ -457,6 +457,7 @@ system shall be targeted for the generation of scripts.  Currently the
 supported values are:
 
   - Microsoft SQL Server
+  - PostgreSQL
 
 Each system can also have sub-settings that modify the generated scripts.
 
@@ -668,6 +669,36 @@ END_OF_HELP
       
       output_to(options.outfile) do |out_stream|
         out_stream.print(sql_gen.update_sql)
+      end
+    end
+    
+    subcommand 'reversions', "Generate a script file containing reversions" do |argv|
+      args, options = command_line(argv, {:outfile=>true},
+                                   :help=> <<END_OF_HELP)
+This command generates a script file containing parts that can be run to
+revert individual migrations in reverse of the order they are applied.  The
+SQL for reverting the migration is taken from a file with the same basename
+as the migration it reverts, but in the 'rollback' subfolder and with a
+'.sql' extension.  The output file will not run as a viable script; a 
+contiguous section starting at the first SQL command and terminating at a
+migration boundary should be run.  Subsequent sections, consecutive with those
+previously run, may also be run to further revert the database if necessary.
+
+It may be helpful to execute the query:
+
+    SELECT * FROM xmigra.last_applied_migrations ORDER BY "RevertOrder";
+
+This query lists the migrations applied by the last upgrade script that was
+run.
+END_OF_HELP
+
+      argument_error_unless(args.length == 0,
+                            "'%prog %cmd' does not take any arguments.")
+      
+      sql_gen = SchemaUpdater.new(options.source_dir).extend(WarnToStderr)
+      
+      output_to(options.outfile) do |out_stream|
+        out_stream.print(sql_gen.reversion_script)
       end
     end
     

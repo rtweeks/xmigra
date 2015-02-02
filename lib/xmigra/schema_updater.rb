@@ -1,8 +1,11 @@
 
 require 'xmigra/schema_manipulator'
+require 'xmigra/reversion_script_building'
 
 module XMigra
   class SchemaUpdater < SchemaManipulator
+    include ReversionScriptBuilding
+    
     DEV_SCRIPT_WARNING = <<-"END_OF_TEXT"
 *********************************************************
 ***                    WARNING                        ***
