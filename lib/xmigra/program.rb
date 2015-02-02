@@ -457,6 +457,7 @@ system shall be targeted for the generation of scripts.  Currently the
 supported values are:
 
   - Microsoft SQL Server
+  - PostgreSQL
 
 Each system can also have sub-settings that modify the generated scripts.
 
