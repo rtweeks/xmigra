@@ -591,7 +591,7 @@ module XMigra
           DELETE FROM xmigra.applied WHERE "MigrationID" = CompletedMigration.applied;
           
           INSERT INTO xmigra.applied ("MigrationID", "VersionBridgeMark", "Description")
-          VALUE (CompletedMigration.applied, TRUE, 'Branch upgrade from branch ' || CompletedMigration.old_branch || '.');
+          VALUES (CompletedMigration.applied, TRUE, 'Branch upgrade from branch ' || CompletedMigration.old_branch || '.');
           
           RAISE NOTICE '    done';
         END IF;
