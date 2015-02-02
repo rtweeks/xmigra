@@ -113,6 +113,24 @@ module XMigra
         
         IF NOT EXISTS(
           SELECT * FROM information_schema.tables
+          WHERE table_schema = 'xmigra' AND table_name = 'previous_states'
+        ) THEN
+          CREATE TABLE xmigra.previous_states (
+            "Changed"                   timestamp NOT NULL,
+            "MigrationApplicationOrder" int NOT NULL,
+            "FromMigrationID"           varchar(80),
+            "ToRangeStartMigrationID"   varchar(80) NOT NULL,
+            "ToRangeEndMigrationID"     varchar(80) NOT NULL,
+            
+            CONSTRAINT PK_previous_states PRIMARY KEY (
+              "Changed",
+              "MigrationApplicationOrder"
+            )
+          );
+        END IF;
+        
+        IF NOT EXISTS(
+          SELECT * FROM information_schema.tables
           WHERE table_schema = 'xmigra' AND table_name = 'access_objects'
         ) THEN
           CREATE TABLE xmigra.access_objects (
@@ -143,6 +161,26 @@ module XMigra
             "UpgradeSql" text NULL,
             "CompletesMigration" varchar(80) NULL
           );
+        END IF;
+        
+        IF NOT EXISTS(
+          SELECT * FROM information_schema.views
+          WHERE table_schema = 'xmigra' and table_name = 'last_applied_migrations'
+        ) THEN
+          CREATE VIEW xmigra.last_applied_migrations AS
+          SELECT
+            row_number() OVER (ORDER BY a."ApplicationOrder" DESC) AS "RevertOrder",
+            a."Description"
+          FROM
+            xmigra.applied a
+          WHERE
+            a."ApplicationOrder" > COALESCE((
+              SELECT ps."MigrationApplicationOrder"
+              FROM xmigra.previous_states ps
+              JOIN xmigra.applied a2 ON ps."ToRangeStartMigrationID" = a2."MigrationID"
+              ORDER BY ps."Changed" DESC
+              LIMIT 1
+            ), 0);
         END IF;
         
         RAISE NOTICE '    done';
@@ -291,6 +329,40 @@ module XMigra
             SELECT a."MigrationID" FROM xmigra.applied a
           );
         END IF;
+        
+        INSERT INTO xmigra.previous_states (
+          "Changed",
+          "MigrationApplicationOrder",
+          "FromMigrationID",
+          "ToRangeStartMigrationID",
+          "ToRangeEndMigrationID"
+        )
+        SELECT
+          CURRENT_TIMESTAMP,
+          -- Application order of last installed migration --
+          COALESCE(
+            (
+              SELECT "ApplicationOrder" FROM xmigra.applied
+              ORDER BY "ApplicationOrder" DESC
+            ),
+            0
+          ),
+          ( -- Last installed migration --
+            SELECT "MigrationID" FROM xmigra.applied
+            ORDER BY "ApplicationOrder" DESC
+            LIMIT 1
+          ),
+          m."MigrationID",
+          ( -- Last migration to install --
+            SELECT "MigrationID" FROM temp$xmigra_migrations
+            WHERE "Install"
+            ORDER BY "ApplicationOrder" DESC
+            LIMIT 1
+          )
+        FROM temp$xmigra_migrations m
+        WHERE "Install"
+        ORDER BY "ApplicationOrder" ASC
+        LIMIT 1;
         
         RAISE NOTICE '    done';
       })

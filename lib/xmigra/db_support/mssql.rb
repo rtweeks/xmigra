@@ -193,6 +193,27 @@ END;
 
 IF NOT EXISTS (
   SELECT * FROM sys.objects
+  WHERE object_id = OBJECT_ID(N'[xmigra].[previous_states]')
+  AND type IN (N'U')
+)
+BEGIN
+  CREATE TABLE [xmigra].[previous_states] (
+    [Changed]                   datetime NOT NULL,
+    [MigrationApplicationOrder] int NOT NULL,
+    [FromMigrationID]           nvarchar(80) COLLATE #{ID_COLLATION},
+    [ToRangeStartMigrationID]   nvarchar(80) COLLATE #{ID_COLLATION} NOT NULL,
+    [ToRangeEndMigrationID]     nvarchar(80) COLLATE #{ID_COLLATION} NOT NULL,
+    
+    CONSTRAINT [PK_previous_states] PRIMARY KEY CLUSTERED (
+      [Changed] ASC,
+      [MigrationApplicationOrder] ASC
+    )
+  );
+END;
+GO
+
+IF NOT EXISTS (
+  SELECT * FROM sys.objects
   WHERE object_id = OBJECT_ID(N'[xmigra].[DF_version_VersionBridgeMark]')
   AND type IN (N'D')
 )
@@ -264,6 +285,30 @@ BEGIN
     [CompletesMigration] nvarchar(80) NULL
   ) ON [PRIMARY];
 END;
+
+IF EXISTS (
+  SELECT * FROM sys.objects
+  WHERE object_id = OBJECT_ID(N'[xmigra].[last_applied_migrations]')
+  AND type IN (N'V')
+)
+BEGIN
+  DROP VIEW [xmigra].[last_applied_migrations];
+END;
+GO
+
+CREATE VIEW [xmigra].[last_applied_migrations] AS
+SELECT
+  ROW_NUMBER() OVER (ORDER BY a.[ApplicationOrder] DESC) AS [RevertOrder],
+  a.[Description]
+FROM
+  [xmigra].[applied] a
+WHERE
+  a.[ApplicationOrder] > COALESCE((
+    SELECT TOP (1) ps.[MigrationApplicationOrder]
+    FROM [xmigra].[previous_states] ps
+    JOIN [xmigra].[applied] a2 ON ps.[ToRangeStartMigrationID] = a2.[MigrationID]
+    ORDER BY ps.[Changed] DESC
+  ), 0);
       END_OF_SQL
     end
     
@@ -492,6 +537,38 @@ ELSE BEGIN
   )
   AND [ApplicationOrder] > @BridgePoint;
 END;
+
+INSERT INTO [xmigra].[previous_states] (
+  [Changed],
+  [MigrationApplicationOrder],
+  [FromMigrationID],
+  [ToRangeStartMigrationID],
+  [ToRangeEndMigrationID]
+)
+SELECT TOP (1)
+  CURRENT_TIMESTAMP,
+  -- Application order of last installed migration --
+  COALESCE(
+    ( 
+      SELECT TOP(1) [ApplicationOrder] FROM [xmigra].[applied]
+      ORDER BY [ApplicationOrder] DESC
+    ),
+    0
+  ),
+  ( -- Last installed migration --
+    SELECT TOP (1) [MigrationID]
+    FROM [xmigra].[applied]
+    ORDER BY [ApplicationOrder] DESC
+  ),
+  m.[MigrationID],
+  ( -- Last migration to install --
+    SELECT TOP(1) [MigrationID] FROM [xmigra].[migrations]
+    WHERE [Install] <> 0
+    ORDER BY [ApplicationOrder] DESC
+  )
+FROM [xmigra].[migrations] m
+WHERE m.[Install] <> 0
+ORDER BY m.[ApplicationOrder] ASC;
       END_OF_SQL
     end
     
