@@ -7,6 +7,7 @@ require 'tmpdir'
 
 TESTS = %w[
   git_vcs
+  reversions
 ]
 
 $:.unshift Pathname(__FILE__).expand_path.dirname.dirname + 'lib'
@@ -48,7 +49,13 @@ def run_test(name, &block)
     end
   else
     begin
-      block.call
+      prev_stdout = $stdout
+      $stdout = StringIO.new
+      begin
+        block.call
+      ensure
+        $stdout = prev_stdout
+      end
       exit! 0
     rescue AssertionFailure
       exit! 2
@@ -93,6 +100,11 @@ def initialize_xmigra_schema(path='.', options={})
       'system' => $xmigra_test_system,
     }.merge(options[:db_info] || {}), f)
   end
+end
+
+def test_output
+  return nil unless $stdout.kind_of? StringIO
+  return $stdout.string
 end
 
 def assert(message=nil, &block)

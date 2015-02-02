@@ -982,6 +982,10 @@ END;
       end.join("\n"))
     end
     
+    def reversion_tracking_sql
+      "DELETE FROM [xmigra].[applied] WHERE [MigrationID] = '#{id}';\n"
+    end
+    
     def each_batch(sql)
       current_batch_lines = []
       sql.each_line do |line|

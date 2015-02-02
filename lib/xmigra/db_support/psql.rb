@@ -562,6 +562,10 @@ module XMigra
       }
     end
     
+    def reversion_tracking_sql
+      %Q{DELETE FROM xmigra.applied WHERE "MigrationID" = '#{id}';\n}
+    end
+    
     def check_existence_sql(for_existence, error_message)
       error_message_literal = PgSQLSpecifics.string_literal sprintf(error_message, quoted_name)
       
