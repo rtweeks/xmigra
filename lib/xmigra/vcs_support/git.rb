@@ -8,7 +8,7 @@ module XMigra
     
     class << self
       def manages(path)
-        run_git(:status, :check_exit=>true)
+        run_git(:status, :check_exit=>true, :quiet=>true)
       end
       
       def run_git(subcmd, *args)

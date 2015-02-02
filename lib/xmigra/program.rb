@@ -184,7 +184,7 @@ END_OF_HELP
       
       def output_to(fpath_or_nil)
         if fpath_or_nil.nil?
-          yield(STDOUT)
+          yield($stdout)
         else
           File.open(fpath_or_nil, "w") do |stream|
             yield(stream)
