@@ -12,6 +12,8 @@ module XMigra
     $/ix
     STATISTICS_FILE = 'statistics-objects.yaml'
     
+    ID_COLLATION = 'Latin1_General_CS_AS'
+    
     class StatisticsObject
       def initialize(name, params)
         (@name = name.dup).freeze
@@ -153,7 +155,7 @@ IF NOT EXISTS (
 )
 BEGIN
   CREATE TABLE [xmigra].[applied] (
-    [MigrationID]            nvarchar(80) NOT NULL,
+    [MigrationID]            nvarchar(80) COLLATE #{ID_COLLATION} NOT NULL,
     [ApplicationOrder]       int IDENTITY(1,1) NOT NULL,
     [VersionBridgeMark]      bit NOT NULL,
     [Description]            nvarchar(max) NOT NULL,
@@ -170,6 +172,24 @@ BEGIN
   ) ON [PRIMARY] TEXTIMAGE_ON [PRIMARY];
 END;
 GO
+
+IF NOT EXISTS (
+  SELECT * FROM sys.columns
+  WHERE object_id = OBJECT_ID(N'[xmigra].[applied]')
+  AND name = N'MigrationID'
+  AND collation_name = N'#{ID_COLLATION}'
+)
+BEGIN
+  ALTER TABLE xmigra.applied DROP CONSTRAINT PK_version;
+  ALTER TABLE xmigra.applied ALTER COLUMN [MigrationID] nvarchar(80) COLLATE Latin1_General_CS_AS NOT NULL;
+  ALTER TABLE xmigra.applied ADD CONSTRAINT PK_version PRIMARY KEY ([MigrationID] ASC) WITH (
+    PAD_INDEX = OFF,
+    STATISTICS_NORECOMPUTE  = OFF,
+    IGNORE_DUP_KEY = OFF,
+    ALLOW_ROW_LOCKS = ON,
+    ALLOW_PAGE_LOCKS = ON
+  ) ON [PRIMARY];
+END;
 
 IF NOT EXISTS (
   SELECT * FROM sys.objects
@@ -260,7 +280,7 @@ END;
 GO
 
 CREATE TABLE [xmigra].[migrations] (
-  [MigrationID]            nvarchar(80) NOT NULL,
+  [MigrationID]            nvarchar(80) COLLATE #{ID_COLLATION} NOT NULL,
   [ApplicationOrder]       int NOT NULL,
   [Description]            ntext NOT NULL,
   [Install]                bit NOT NULL DEFAULT(0)
