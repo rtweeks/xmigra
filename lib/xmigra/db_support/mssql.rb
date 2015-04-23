@@ -279,12 +279,14 @@ IF NOT EXISTS (
 BEGIN
   CREATE TABLE [xmigra].[branch_upgrade] (
     [ApplicationOrder] int identity(1,1) NOT NULL,
-    [Current] nvarchar(80) NOT NULL PRIMARY KEY,
-    [Next] nvarchar(80) NULL,
+    [Current] nvarchar(80) COLLATE #{ID_COLLATION} NOT NULL PRIMARY KEY,
+    [Next] nvarchar(80) COLLATE #{ID_COLLATION} NULL,
     [UpgradeSql] nvarchar(max) NULL,
-    [CompletesMigration] nvarchar(80) NULL
+    [CompletesMigration] nvarchar(80) COLLATE #{ID_COLLATION} NULL
   ) ON [PRIMARY];
 END;
+GO
+ALTER TABLE [xmigra].[branch_upgrade] ALTER COLUMN [CompletesMigration] nvarchar(80) COLLATE #{ID_COLLATION} NULL;
 
 IF EXISTS (
   SELECT * FROM sys.objects
