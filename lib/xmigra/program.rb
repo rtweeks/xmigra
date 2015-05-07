@@ -626,6 +626,22 @@ END_SECTION
       puts
     end
     
+    subcommand 'init', "Interactively set up a source filesystem subtree" do |argv|
+      args, options = command_line(argv, {:edit=>true},
+                                   :help=> <<END_OF_HELP)
+This command interactively asks for and records the information needed to set
+up a filesystem subtree as a source for generating scripts.
+END_OF_HELP
+      
+      tool = SourceTreeInitializer.new(options.source_dir).extend(WarnToStderr)
+      
+      file_paths = tool.create_files!
+      
+      if options.edit
+        file_paths.each {|fpath| edit(fpath)}
+      end
+    end
+    
     subcommand 'new', "Create a new migration file" do |argv|
       args, options = command_line(argv, {:edit=>true},
                                    :argument_desc=>"MIGRATION_SUMMARY",
