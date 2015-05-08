@@ -330,6 +330,7 @@ require 'xmigra/schema_manipulator'
 require 'xmigra/schema_updater'
 require 'xmigra/new_migration_adder'
 require 'xmigra/permission_script_writer'
+require 'xmigra/source_tree_initializer'
 
 require 'xmigra/program'
 
