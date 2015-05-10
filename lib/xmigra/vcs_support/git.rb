@@ -132,8 +132,6 @@ module XMigra
       end
       
       def init_schema(schema_config)
-        operations = []
-        
         if master_url = get_master_url
           # Select locations for .gitattributes or .git/info/attributes
           attribs_file = ConsoleMenu.new(
@@ -153,8 +151,6 @@ module XMigra
             schema_config.created_file! attribs_file.file_path
           end
         end
-        
-        return operations
       end
     end
     
