@@ -1,3 +1,4 @@
+require 'xmigra/console'
 
 module XMigra
   module GitSpecifics
@@ -132,23 +133,25 @@ module XMigra
       end
       
       def init_schema(schema_config)
-        if master_url = get_master_url
-          # Select locations for .gitattributes or .git/info/attributes
-          attribs_file = ConsoleMenu.new(
-            "Git Attributes Files",
-            attributes_file_paths(schema_config.root_path),
-            "File for storing 'xmigra-master' attribute",
-            :get_name => lambda {|af| af.description}
-          ).get_selection
-          
-          dbinfo_path = schema_config.root_path + SchemaManipulator::DBINFO_FILE
-          attribute_pattern = "/#{dbinfo_path.relative_path_from(attribs_file.effect_root)}"
-          
-          schema_config.after_dbinfo_creation do
-            attribs_file.open('a') do |attribs_io|
-              attribs_io.puts "#{attribute_pattern} xmigra-master=#{master_url}"
+        Console.output_section "Git Integration" do
+          if master_url = get_master_url
+            # Select locations for .gitattributes or .git/info/attributes
+            attribs_file = Console::Menu.new(
+              "Git Attributes Files",
+              attributes_file_paths(schema_config.root_path),
+              "File for storing 'xmigra-master' attribute",
+              :get_name => lambda {|af| af.description}
+            ).get_selection
+            
+            dbinfo_path = schema_config.root_path + SchemaManipulator::DBINFO_FILE
+            attribute_pattern = "/#{dbinfo_path.relative_path_from(attribs_file.effect_root)}"
+            
+            schema_config.after_dbinfo_creation do
+              attribs_file.open('a') do |attribs_io|
+                attribs_io.puts "#{attribute_pattern} xmigra-master=#{master_url}"
+              end
+              schema_config.created_file! attribs_file.file_path
             end
-            schema_config.created_file! attribs_file.file_path
           end
         end
       end

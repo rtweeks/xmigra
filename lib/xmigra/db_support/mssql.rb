@@ -1,3 +1,4 @@
+require 'xmigra/console'
 
 module XMigra
   module MSSQLSpecifics
@@ -1168,15 +1169,17 @@ INSERT INTO [xmigra].[branch_upgrade] ([Current]) VALUES (#{branch_id_literal});
       end
       
       def init_schema(schema_config)
-        loop do
-          print "Use more verbose syntax compatible with SQL Server 2005 (y/N): "
-          case $stdin.gets.strip
-          when /^y(es)?$/i
-            schema_config.dbinfo["MSSQL 2005 compatible"] = true
-            puts "Configured for SQL Server 2005 compatibility mode."
-            break
-          when /^(n(o)?)?$/i
-            break
+        Console.output_section "Microsoft SQL Server Specifics" do
+          loop do
+            print "Use more verbose syntax compatible with SQL Server 2005 (y/N): "
+            case $stdin.gets.strip
+            when /^y(es)?$/i
+              schema_config.dbinfo["MSSQL 2005 compatible"] = true
+              puts "Configured for SQL Server 2005 compatibility mode."
+              break
+            when /^(n(o)?)?$/i
+              break
+            end
           end
         end
       end

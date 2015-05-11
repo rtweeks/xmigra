@@ -1,5 +1,5 @@
 require 'pathname'
-require 'xmigra/console_menu'
+require 'xmigra/console'
 require 'xmigra/schema_manipulator'
 
 module XMigra
@@ -75,7 +75,7 @@ module XMigra
         end
       end
       
-      db_system = ConsoleMenu.new(
+      db_system = Console::Menu.new(
         "Supported Database Systems",
         DatabaseSupportModules,
         "Target system",
