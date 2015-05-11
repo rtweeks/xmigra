@@ -65,11 +65,9 @@ module XMigra
         puts "you later decide to use version control, you will need to configure"
         puts "it without assistance from this script."
         puts
-        loop do
-          print "Continue configuring schema management (y/N): "
-          input_value = $stdin.gets.strip
+        Console.validated_input("Continue configuring schema management (y/N)") do |input_value|
           case input_value
-          when /^y(es)?$/io then break
+          when /^y(es)?$/io then true
           when /^(n(o)?)?$/io then return
           end
         end

@@ -124,11 +124,13 @@ module XMigra
         master_repo = $stdin.gets.strip
         return nil if master_repo.empty?
         
-        loop do
-          print "Master branch name: "
-          master_branch = $stdin.gets.strip
-          return "#{master_repo}##{master_branch}" unless master_branch.empty?
-          puts "Master branch name required to set 'xmigra-master' --"
+        Console.validated_input "Master branch name" do |master_branch|
+          if master_branch.empty?
+            raise Console::InvalidInput.new(
+              "Master branch name required to set 'xmigra-master' attribute --"
+            )
+          end
+          "#{master_repo}##{master_branch}"
         end
       end
       

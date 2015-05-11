@@ -1170,15 +1170,14 @@ INSERT INTO [xmigra].[branch_upgrade] ([Current]) VALUES (#{branch_id_literal});
       
       def init_schema(schema_config)
         Console.output_section "Microsoft SQL Server Specifics" do
-          loop do
-            print "Use more verbose syntax compatible with SQL Server 2005 (y/N): "
-            case $stdin.gets.strip
-            when /^y(es)?$/i
+          Console.validated_input "Use more verbose syntax compatible with SQL Server 2005 (y/N)" do |input_value|
+            case input_value
+            when /^y(es)?$/io
               schema_config.dbinfo["MSSQL 2005 compatible"] = true
               puts "Configured for SQL Server 2005 compatibility mode."
-              break
-            when /^(n(o)?)?$/i
-              break
+              true
+            when /^(n(o)?)?$/io
+              false
             end
           end
         end

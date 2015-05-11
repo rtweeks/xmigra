@@ -42,14 +42,25 @@ module XMigra
       end
       
       def get_selection
-        selection = show_once
-        while selection.nil?
+        loop do
+          selection = show_once
+          break unless selection.nil?
           puts "That input did not uniquely identify one of the available options."
           puts
-          selection = show_once
         end
         @trailing_newlines.times {puts}
         return @name_map[selection]
+      end
+    end
+    
+    class InvalidInput < Exception
+      def initialize(msg=nil)
+        super(msg)
+        @explicit_message = !msg.nil?
+      end
+      
+      def explicit_message?
+        @explicit_message
       end
     end
     
@@ -64,6 +75,22 @@ module XMigra
         
         (yield).tap do
           trailing_newlines.times {puts}
+        end
+      end
+      
+      def validated_input(prompt)
+        loop do
+          print prompt + ": "
+          input_value = $stdin.gets.strip
+          
+          result = begin
+            yield input_value
+          rescue InvalidInput => e
+            puts e.message if e.explicit_message?
+            next
+          end
+          
+          return result unless result.nil?
         end
       end
     end
