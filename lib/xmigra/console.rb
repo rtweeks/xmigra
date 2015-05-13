@@ -93,6 +93,23 @@ module XMigra
           return result unless result.nil?
         end
       end
+      
+      def yes_no(prompt, default_value)
+        input_options = ""
+        input_options << (default_value == :yes ? "Y" : "y")
+        input_options << (default_value == :no ? "N" : "n")
+        
+        validated_input("#{prompt} [#{input_options}]") do |input_value|
+          case input_value
+          when /^y(es)?$/io
+            true
+          when /^n(o)?$/io
+            false
+          when ''
+            {:yes => true, :no => false}[default_value]
+          end
+        end
+      end
     end
   end
 end
