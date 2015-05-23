@@ -13,6 +13,7 @@ TESTS = %w[
 $:.unshift Pathname(__FILE__).expand_path.dirname.dirname + 'lib'
 $:.unshift Pathname(__FILE__).expand_path.dirname.dirname
 require 'xmigra'
+require 'test/utils'
 
 $test_count = 0
 $test_successes = 0
@@ -65,40 +66,6 @@ def run_test(name, &block)
       puts $!.backtrace
       exit! 1
     end
-  end
-end
-
-class Integer
-  def temp_dirs(prefix='')
-    tmpdirs = []
-    begin
-      (1..self).each do |i|
-        tmpdirs << Pathname(Dir.mktmpdir([prefix, ".#{i}"]))
-      end
-      
-      yield(*tmpdirs)
-    ensure
-      tmpdirs.each do |dp|
-        begin
-          FileUtils.remove_entry dp
-        rescue
-          # Skip failure
-        end
-      end
-    end
-  end
-end
-
-def do_or_die(command, message=nil, exc_type=Exception)
-  output = `#{command}`
-  $?.success? || raise(exc_type, message || ("Unable to " + command + "\n" + output))
-end
-
-def initialize_xmigra_schema(path='.', options={})
-  (Pathname(path) + XMigra::SchemaManipulator::DBINFO_FILE).open('w') do |f|
-    YAML.dump({
-      'system' => $xmigra_test_system,
-    }.merge(options[:db_info] || {}), f)
   end
 end
 
