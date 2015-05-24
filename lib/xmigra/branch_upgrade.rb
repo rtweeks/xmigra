@@ -1,5 +1,6 @@
 
 require 'xmigra/migration'
+require 'xmigra/plugin'
 
 module XMigra
   class BranchUpgrade
@@ -27,7 +28,7 @@ module XMigra
       @sql = verinc_info['sql']
     end
     
-    attr_reader :file_path, :base_migration, :target_branch, :migration_completed, :sql
+    attr_reader :file_path, :base_migration, :target_branch, :migration_completed
     
     def found?
       @found
@@ -46,6 +47,16 @@ module XMigra
     
     def warnings
       @warnings.dup
+    end
+    
+    def sql
+      if Plugin.active
+        @sql.dup.tap do |result|
+          Plugin.active.amend_source_sql(result)
+        end
+      else
+        @sql
+      end
     end
     
     def migration_completed_id

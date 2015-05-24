@@ -1,3 +1,4 @@
+require 'xmigra/plugin'
 
 module XMigra
   class Index
@@ -15,7 +16,13 @@ module XMigra
     end
     
     def definition_sql
-      @definition
+      if Plugin.active
+        @definition.dup.tap do |sql|
+          Plugin.active.amend_source_sql(sql)
+        end
+      else
+        @definition
+      end
     end
   end
 end

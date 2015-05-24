@@ -1,4 +1,5 @@
 
+require 'xmigra/plugin'
 require 'xmigra/schema_manipulator'
 
 module XMigra
@@ -35,7 +36,9 @@ module XMigra
           # Grant the permissions indicated in the source file
           grant_specified_permissions_sql,
           
-        ].flatten.compact.join(ddl_block_separator)
+        ].flatten.compact.join(ddl_block_separator).tap do |result|
+          Plugin.active.amend_composed_sql(result) if Plugin.active
+        end
       end
     end
     

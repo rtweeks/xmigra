@@ -1,4 +1,6 @@
 
+require 'xmigra/plugin'
+
 module XMigra
   module ReversionScriptBuilding
     # This module is intended to be included into XMigra::SchemaUpdater
@@ -33,8 +35,12 @@ module XMigra
         "database.\n",
       ].collect {|l| '-- ' + l + "\n"}.join('')
       
-      return usage_note + "========================================\n" + \
-          reversions.join("-- ================================== --\n")
+      "".tap do |result|
+        result << usage_note + "========================================\n"
+        result << reversions.join("-- ================================== --\n")
+        
+        Plugin.active.amend_composed_sql(result) if Plugin.active
+      end
     end
   end
 end
