@@ -35,6 +35,8 @@ module XMigra
     # this method will be included in the commands to run, and any
     # modifications made to this object will be reflected in the script.
     # XMigra only calls this method to amend SQL read in from source files.
+    #
+    # The default implementation does nothing
     
     def amend_source_sql(sql)
     end
@@ -49,8 +51,47 @@ module XMigra
     # (e.g. splitting the script into batches and encoding as string
     # literals).  The one exception to this is for any branch upgrade SQL,
     # which will already be encoded in one or more string literals.
+    #
+    # The default implementation does nothing.
     
     def amend_composed_sql(sql)
+    end
+    
+    
+    # Indicate if the access artifact (stored procedure, user defined function,
+    # or view) should be included in the logical schema.
+    #
+    # The default implementation always returns +true+.
+    
+    def include_access_artifact?(artifact)
+      true
+    end
+    
+    
+    # Amend each included access artifact.
+    #
+    # _artifact_ - an XMigra::StoredProcedure, XMigra::Function, or XMigra::View
+    #
+    # The default implementation does nothing.
+    
+    def amend_access_artifact(artifact)
+    end
+    
+    
+    # Indicate if the index should be included in the logical schema.
+    #
+    # The default implementation always return +true+.
+    
+    def include_index?(index)
+      true
+    end
+    
+    
+    # Amend each included index.
+    #
+    # The default implementation does nothing.
+    
+    def amend_index(index)
     end
   end
 end

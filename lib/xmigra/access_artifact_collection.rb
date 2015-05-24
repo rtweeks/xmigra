@@ -1,5 +1,6 @@
 
 require "tsort"
+require 'xmigra/plugin'
 
 module XMigra
   class AccessArtifactCollection
@@ -10,9 +11,15 @@ module XMigra
       filename_metavariable = filename_metavariable.dup.freeze if filename_metavariable
       
       XMigra.each_access_artifact(path) do |artifact|
-        @items[artifact.name] = artifact
         artifact.extend(db_specifics) if db_specifics
         artifact.filename_metavariable = filename_metavariable
+        
+        if Plugin.active
+          next unless Plugin.active.include_access_artifact?(artifact)
+          Plugin.active.amend_access_artifact(artifact)
+        end
+        
+        @items[artifact.name] = artifact
       end
     end
     

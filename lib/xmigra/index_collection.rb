@@ -1,5 +1,6 @@
 
 require 'xmigra/index'
+require 'xmigra/plugin'
 
 module XMigra
   class IndexCollection
@@ -12,6 +13,12 @@ module XMigra
         index = Index.new(info)
         index.extend(db_specifics) if db_specifics
         index.file_path = File.expand_path(fpath)
+        
+        if Plugin.active
+          next unless Plugin.active.include_index?(index)
+          Plugin.active.amend_index(index)
+        end
+        
         @items[index.name] = index
       end
     end
