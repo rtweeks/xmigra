@@ -42,6 +42,9 @@ module XMigra
             end
           rescue TerminatingOption => stop
             return stop
+          rescue PluginLoadingError => error
+            $stderr.puts error.message
+            exit 1
           end
         ensure
           @active_subcommand = prev_subcommand
@@ -681,6 +684,7 @@ END_OF_HELP
                             "'%prog %cmd' does not take any arguments.")
       
       sql_gen = SchemaUpdater.new(options.source_dir).extend(WarnToStderr)
+      sql_gen.load_plugin!
       sql_gen.production = options.production
       
       output_to(options.outfile) do |out_stream|
@@ -712,6 +716,7 @@ END_OF_HELP
                             "'%prog %cmd' does not take any arguments.")
       
       sql_gen = SchemaUpdater.new(options.source_dir).extend(WarnToStderr)
+      sql_gen.load_plugin!
       
       output_to(options.outfile) do |out_stream|
         out_stream.print(sql_gen.reversion_script)
@@ -733,6 +738,7 @@ END_OF_HELP
                             "'%prog %cmd' must target an existing access object definition.")
       
       sql_gen = SchemaUpdater.new(options.source_dir).extend(WarnToStderr)
+      sql_gen.load_plugin!
       
       artifact = sql_gen.access_artifacts[args[0]] || sql_gen.access_artifacts.at_path(args[0])
       output_to(options.outfile) do |out_stream|
@@ -911,6 +917,7 @@ END_OF_HELP
       end
       
       tool = SchemaUpdater.new(options.source_dir).extend(WarnToStderr)
+      tool.load_plugin!
       
       output_to(options.outfile) do |out_stream|
         tool.migrations.each do |migration|
@@ -965,6 +972,7 @@ END_OF_HELP
                             "'%prog %cmd' does not take any arguments.")
       
       sql_gen = PermissionScriptWriter.new(options.source_dir).extend(WarnToStderr)
+      sql_gen.load_plugin!
       
       output_to(options.outfile) do |out_stream|
         out_stream.print(sql_gen.permissions_sql)
