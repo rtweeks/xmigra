@@ -27,6 +27,7 @@ module XMigra
     # plugin may be active at any time.
     
     def activate!
+      $stderr.puts "WARNING: Another plugin (type #{Plugin.active.class}) already active." if Plugin.active
       Plugin.instance_variable_set :@active, self
     end
     
