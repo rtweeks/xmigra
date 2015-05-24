@@ -449,7 +449,7 @@ END_SECTION
       begin; section['The "SCHEMA/database.yaml" File', <<END_SECTION]
 
 The SCHEMA/database.yaml file consists of several sections that provide general
-information about the database schema.  The following subsection detail some
+information about the database schema.  The following subsections detail some
 contents that may be included in this file.
 
 system
@@ -494,6 +494,25 @@ metavariable that is used for access object definitions.  The default value
 is "[{filename}]" (excluding the quotation marks).  If that string is required
 in one or more access object definitions, this section allows the schema to
 dictate another value.
+
+XMigra plugin
+-------------
+
+If given, this section/entry provides a name to require into the XMigra
+program (see documentation on Ruby's Kernel#require), with the intention that
+the required file will define and activate an instance of a subclass of
+XMigra::Plugin (see the documentation for XMigra::Plugin or
+lib/xmigra/plugin.rb).  Only one plugin may be specified, though that one
+plugin may aggregate the functionality of other plugins.
+
+Plugins are an advanced feature that can defeat many of the measures %program_name
+takes to guarantee that a database generated from scratch will go through the
+same sequence of changes as the production database(s) has/have.  This can
+happen even unintentionally, for instance by upgrading the gem that provides
+the plugin.  While the resulting script will still (if possible) be transacted,
+the incompatibility may not be discovered until the script is run against a
+production database, requiring cancellation of deployment.  Use this feature
+with extreme caution.
 END_SECTION
       end
       begin; section['Script Generation Modes', <<END_SECTION]
