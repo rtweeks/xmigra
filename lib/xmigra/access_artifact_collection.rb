@@ -21,6 +21,12 @@ module XMigra
         
         @items[artifact.name] = artifact
       end
+      
+      if Plugin.active
+        Plugin.active.each_additional_access_artifact(db_specifics) do |artifact|
+          @items[artifact.name] = artifact
+        end
+      end
     end
     
     def [](name)

@@ -21,6 +21,12 @@ module XMigra
         
         @items[index.name] = index
       end
+      
+      if Plugin.active
+        Plugin.active.each_additional_index(db_specifics) do |index|
+          @items[index.name] = index
+        end
+      end
     end
     
     def [](name)

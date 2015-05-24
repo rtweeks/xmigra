@@ -79,6 +79,20 @@ module XMigra
     end
     
     
+    # Yields additional access artifacts to include in the logical schema.
+    #
+    # _db_specifics_ - A module providing methods useful for building SQL
+    #                  specific to the target RDBMS.
+    # 
+    # The yielded artifact objects must respond to +name+, +depends_on+ and
+    # +definition_sql+.
+    #
+    # The default implementation does not yield any objects.
+    
+    def each_additional_access_artifact(db_specifics=nil) # :yields: artifact
+    end
+    
+    
     # Indicate if the index should be included in the logical schema.
     #
     # The default implementation always return +true+.
@@ -93,6 +107,19 @@ module XMigra
     # The default implementation does nothing.
     
     def amend_index(index)
+    end
+    
+    
+    # Yields additional indexes to include in the logical schema.
+    #
+    # _db_specifics_ - A module providing methods useful for building SQL
+    #                  specific to the target RDBMS.
+    # 
+    # The yielded index objects must respond to +name+ and +definition_sql+.
+    #
+    # The default implementation does not yield any objects.
+    
+    def each_additional_index(db_specifics=nil) # :yields: index
     end
   end
 end
