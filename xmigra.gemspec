@@ -13,7 +13,7 @@ Gem::Specification.new do |spec|
     XMigra is a suite of tools for managing database schema evolution with
     version controlled files.  All database manipulations are written in
     SQL (specific to the target database).  Works with Git or Subversion.
-    Currently supports Microsoft SQL Server.
+    Currently supports Microsoft SQL Server and PostgreSQL.
   END
   spec.homepage      = "https://github.com/rtweeks/xmigra"
   spec.license       = "CC-BY-SA 4.0 Itnl."
