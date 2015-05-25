@@ -319,6 +319,8 @@ require 'xmigra/stored_procedure'
 require 'xmigra/view'
 require 'xmigra/function'
 
+require 'xmigra/plugin'
+
 require 'xmigra/access_artifact_collection'
 require 'xmigra/index'
 require 'xmigra/index_collection'
@@ -330,6 +332,7 @@ require 'xmigra/schema_manipulator'
 require 'xmigra/schema_updater'
 require 'xmigra/new_migration_adder'
 require 'xmigra/permission_script_writer'
+require 'xmigra/source_tree_initializer'
 
 require 'xmigra/program'
 

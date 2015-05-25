@@ -1,3 +1,4 @@
+require 'xmigra/plugin'
 
 module XMigra
   class AccessArtifact
@@ -26,10 +27,20 @@ module XMigra
     end
     
     def creation_sql
-      if metavar = filename_metavariable
-        @definition.gsub(metavar) {|m| self.name}
+      raw = begin
+        if metavar = filename_metavariable
+          @definition.gsub(metavar) {|m| self.name}
+        else
+          @definition
+        end
+      end
+      
+      if Plugin.active
+        raw.dup.tap do |sql|
+          Plugin.active.amend_source_sql(sql)
+        end
       else
-        @definition
+        raw
       end
     end
     

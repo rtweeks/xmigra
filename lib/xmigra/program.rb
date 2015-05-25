@@ -42,6 +42,9 @@ module XMigra
             end
           rescue TerminatingOption => stop
             return stop
+          rescue Plugin::LoadingError => error
+            $stderr.puts error.message
+            exit 1
           end
         ensure
           @active_subcommand = prev_subcommand
@@ -446,7 +449,7 @@ END_SECTION
       begin; section['The "SCHEMA/database.yaml" File', <<END_SECTION]
 
 The SCHEMA/database.yaml file consists of several sections that provide general
-information about the database schema.  The following subsection detail some
+information about the database schema.  The following subsections detail some
 contents that may be included in this file.
 
 system
@@ -491,6 +494,25 @@ metavariable that is used for access object definitions.  The default value
 is "[{filename}]" (excluding the quotation marks).  If that string is required
 in one or more access object definitions, this section allows the schema to
 dictate another value.
+
+XMigra plugin
+-------------
+
+If given, this section/entry provides a name to require into the XMigra
+program (see documentation on Ruby's Kernel#require), with the intention that
+the required file will define and activate an instance of a subclass of
+XMigra::Plugin (see the documentation for XMigra::Plugin or
+lib/xmigra/plugin.rb).  Only one plugin may be specified, though that one
+plugin may aggregate the functionality of other plugins.
+
+Plugins are an advanced feature that can defeat many of the measures %program_name
+takes to guarantee that a database generated from scratch will go through the
+same sequence of changes as the production database(s) has/have.  This can
+happen even unintentionally, for instance by upgrading the gem that provides
+the plugin.  While the resulting script will still (if possible) be transacted,
+the incompatibility may not be discovered until the script is run against a
+production database, requiring cancellation of deployment.  Use this feature
+with extreme caution.
 END_SECTION
       end
       begin; section['Script Generation Modes', <<END_SECTION]
@@ -626,6 +648,22 @@ END_SECTION
       puts
     end
     
+    subcommand 'init', "Interactively set up a source filesystem subtree" do |argv|
+      args, options = command_line(argv, {:edit=>true},
+                                   :help=> <<END_OF_HELP)
+This command interactively asks for and records the information needed to set
+up a filesystem subtree as a source for generating scripts.
+END_OF_HELP
+      
+      tool = SourceTreeInitializer.new(options.source_dir).extend(WarnToStderr)
+      
+      file_paths = tool.create_files!
+      
+      if options.edit
+        file_paths.each {|fpath| edit(fpath)}
+      end
+    end
+    
     subcommand 'new', "Create a new migration file" do |argv|
       args, options = command_line(argv, {:edit=>true},
                                    :argument_desc=>"MIGRATION_SUMMARY",
@@ -665,6 +703,7 @@ END_OF_HELP
                             "'%prog %cmd' does not take any arguments.")
       
       sql_gen = SchemaUpdater.new(options.source_dir).extend(WarnToStderr)
+      sql_gen.load_plugin!
       sql_gen.production = options.production
       
       output_to(options.outfile) do |out_stream|
@@ -696,6 +735,7 @@ END_OF_HELP
                             "'%prog %cmd' does not take any arguments.")
       
       sql_gen = SchemaUpdater.new(options.source_dir).extend(WarnToStderr)
+      sql_gen.load_plugin!
       
       output_to(options.outfile) do |out_stream|
         out_stream.print(sql_gen.reversion_script)
@@ -717,6 +757,7 @@ END_OF_HELP
                             "'%prog %cmd' must target an existing access object definition.")
       
       sql_gen = SchemaUpdater.new(options.source_dir).extend(WarnToStderr)
+      sql_gen.load_plugin!
       
       artifact = sql_gen.access_artifacts[args[0]] || sql_gen.access_artifacts.at_path(args[0])
       output_to(options.outfile) do |out_stream|
@@ -895,6 +936,7 @@ END_OF_HELP
       end
       
       tool = SchemaUpdater.new(options.source_dir).extend(WarnToStderr)
+      tool.load_plugin!
       
       output_to(options.outfile) do |out_stream|
         tool.migrations.each do |migration|
@@ -949,6 +991,7 @@ END_OF_HELP
                             "'%prog %cmd' does not take any arguments.")
       
       sql_gen = PermissionScriptWriter.new(options.source_dir).extend(WarnToStderr)
+      sql_gen.load_plugin!
       
       output_to(options.outfile) do |out_stream|
         out_stream.print(sql_gen.permissions_sql)

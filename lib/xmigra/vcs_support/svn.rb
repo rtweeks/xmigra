@@ -1,3 +1,4 @@
+require 'xmigra/console'
 
 module XMigra
   module SubversionSpecifics
@@ -26,7 +27,7 @@ module XMigra
         cmd_parts = ["svn", subcmd.to_s]
         cmd_parts << "--xml" unless no_result || raw_result
         cmd_parts.concat(
-          args.collect {|a| '""'.insert(1, a)}
+          args.collect {|a| '""'.insert(1, a.to_s)}
         )
         cmd_str = cmd_parts.join(' ')
         
@@ -34,6 +35,31 @@ module XMigra
         raise(VersionControlError, "Subversion command failed with exit code #{$?.exitstatus}") unless $?.success?
         return output if raw_result && !no_result
         return REXML::Document.new(output) unless no_result
+      end
+      
+      def init_schema(schema_config)
+        Console.output_section "Subversion Integration" do
+          puts "Establishing a \"production pattern,\" a regular expression for"
+          puts "recognizing branch identifiers of branches used for production"
+          puts "script generation, simplifies the process of resolving conflicts"
+          puts "in the migration chain, should any arise."
+          puts
+          puts "No escaping (either shell or Ruby) of the regular expression is"
+          puts "necessary when entered here."
+          puts
+          puts "Common choices are:"
+          puts "    ^trunk/"
+          puts "    ^version/"
+          puts
+          print "Production pattern (empty to skip): "
+          
+          production_pattern = $stdin.gets.chomp
+          return if production_pattern.empty?
+          schema_config.after_dbinfo_creation do
+            tool = SchemaManipulator.new(schema_config.root_path).extend(WarnToStderr)
+            tool.production_pattern = production_pattern
+          end
+        end
       end
     end
     

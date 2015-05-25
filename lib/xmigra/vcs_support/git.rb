@@ -1,3 +1,4 @@
+require 'xmigra/console'
 
 module XMigra
   module GitSpecifics
@@ -5,6 +6,57 @@ module XMigra
     
     MASTER_HEAD_ATTRIBUTE = 'xmigra-master'
     MASTER_BRANCH_SUBDIR = 'xmigra-master'
+    
+    class AttributesFile
+      def initialize(effect_root, access=:shared)
+        @effect_root = Pathname(effect_root)
+        @access = access
+      end
+      
+      attr_reader :effect_root, :access
+      
+      def file_relative_path
+        case @access
+        when :local
+          Pathname('.git/info/attributes')
+        else
+          Pathname('.gitattributes')
+        end
+      end
+      
+      def file_path
+        @effect_root + file_relative_path
+      end
+      
+      def path_from(path)
+        file_path.relative_path_from(Pathname(path))
+      end
+      
+      def description
+        "".tap do |result|
+          result << "#{path_from(Pathname.pwd)}"
+          
+          chars = []
+          
+          if file_path.exist?
+            chars << "exists"
+          end
+          
+          case access
+          when :local
+            chars << "local"
+          end
+          
+          unless chars.empty?
+            result << " (#{chars.join(', ')})"
+          end
+        end
+      end
+      
+      def open(*args, &blk)
+        file_path.open(*args, &blk)
+      end
+    end
     
     class << self
       def manages(path)
@@ -49,6 +101,61 @@ module XMigra
           raise VersionControlError, options[:single] + ' undefined'
         end
         return value_list[0]
+      end
+      
+      def attributes_file_paths(path)
+        wdroot = Dir.chdir path do
+          Pathname(run_git('rev-parse', '--show-toplevel').strip).realpath
+        end
+        pwd = Pathname.pwd
+        
+        [].tap do |result|
+          path.realpath.ascend do |dirpath|
+            result << AttributesFile.new(dirpath)
+            break if (wdroot <=> dirpath) >= 0
+          end
+          
+          result << AttributesFile.new(wdroot, :local)
+        end
+      end
+      
+      def get_master_url
+        print "Master repository URL (empty for none): "
+        master_repo = $stdin.gets.strip
+        return nil if master_repo.empty?
+        
+        Console.validated_input "Master branch name" do |master_branch|
+          if master_branch.empty?
+            raise Console::InvalidInput.new(
+              "Master branch name required to set 'xmigra-master' attribute --"
+            )
+          end
+          "#{master_repo}##{master_branch}"
+        end
+      end
+      
+      def init_schema(schema_config)
+        Console.output_section "Git Integration" do
+          if master_url = get_master_url
+            # Select locations for .gitattributes or .git/info/attributes
+            attribs_file = Console::Menu.new(
+              "Git Attributes Files",
+              attributes_file_paths(schema_config.root_path),
+              "File for storing 'xmigra-master' attribute",
+              :get_name => lambda {|af| af.description}
+            ).get_selection
+            
+            dbinfo_path = schema_config.root_path + SchemaManipulator::DBINFO_FILE
+            attribute_pattern = "/#{dbinfo_path.relative_path_from(attribs_file.effect_root)}"
+            
+            schema_config.after_dbinfo_creation do
+              attribs_file.open('a') do |attribs_io|
+                attribs_io.puts "#{attribute_pattern} xmigra-master=#{master_url}"
+              end
+              schema_config.created_file! attribs_file.file_path
+            end
+          end
+        end
       end
     end
     

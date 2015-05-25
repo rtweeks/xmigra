@@ -1,33 +1,4 @@
 
-def in_xmigra_schema
-  1.temp_dirs do |schema|
-    Dir.chdir(schema) do
-      initialize_xmigra_schema
-      yield
-    end
-  end
-end
-
-def add_migration(migration_name, reversion_sql=nil)
-  tool = XMigra::NewMigrationAdder.new('.')
-  mig_path = tool.add_migration migration_name
-  mig_chain = XMigra::MigrationChain.new('structure')
-  migration = mig_chain[-1]
-  unless reversion_sql.nil?
-    class <<migration
-      def reversion_tracking_sql
-        '-- TRACK REVERSION OF MIGRATION --'
-      end
-    end
-    rev_file = XMigra::RevertFile.new(migration)
-    rev_file.path.dirname.mkpath
-    rev_file.path.open('w') do |rev_stream|
-      rev_stream.puts reversion_sql
-    end
-  end
-  return migration
-end
-
 def add_migration_reversion_pair(migration_name, reversion_sql)
   return [add_migration(migration_name, reversion_sql), reversion_sql]
 end
@@ -78,7 +49,7 @@ run_test "Generated revisions script for one migration removes application recor
     assert("Reversions script does not remove migration application record") {
       XMigra::Program.run(['reversions'])
       script = test_output
-      script =~ /DELETE\s+FROM\s+.?xmigra.?\..?applied.?\s+WHERE\s+.?MigrationID.?\s*=\s*'#{migration.id}'\s*;/
+      script =~ /DELETE\s+FROM\s+.?xmigra.?\..?applied.?\s+WHERE\s+.?MigrationID.?\s*=\s*'#{Regexp.escape migration.id}'\s*;/
     }
   end
 end
