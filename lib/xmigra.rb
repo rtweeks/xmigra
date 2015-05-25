@@ -319,6 +319,8 @@ require 'xmigra/stored_procedure'
 require 'xmigra/view'
 require 'xmigra/function'
 
+require 'xmigra/plugin'
+
 require 'xmigra/access_artifact_collection'
 require 'xmigra/index'
 require 'xmigra/index_collection'

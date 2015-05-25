@@ -1,4 +1,5 @@
 
+require 'xmigra/plugin'
 require 'xmigra/schema_manipulator'
 require 'xmigra/reversion_script_building'
 
@@ -77,6 +78,10 @@ RUNNING THIS SCRIPT ON A PRODUCTION DATABASE WILL FAIL.
       check_working_copy!
       
       intro_comment = @db_info.fetch('script comment', '')
+      if Plugin.active
+        intro_comment = intro_comment.dup
+        Plugin.active.amend_source_sql(intro_comment)
+      end
       intro_comment << if production
         sql_comment_block(vcs_information || "")
       else
@@ -140,7 +145,9 @@ RUNNING THIS SCRIPT ON A PRODUCTION DATABASE WILL FAIL.
         
         amend_script_parts(script_parts)
         
-        script_parts.map {|mn| self.send(mn)}.flatten.compact.join(ddl_block_separator)
+        script_parts.map {|mn| self.send(mn)}.flatten.compact.join(ddl_block_separator).tap do |result|
+          Plugin.active.amend_composed_sql(result) if Plugin.active
+        end
       end
     end
     

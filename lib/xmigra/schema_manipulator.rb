@@ -8,6 +8,8 @@ module XMigra
     STRUCTURE_SUBDIR = 'structure'
     VERINC_FILE = 'branch-upgrade.yaml'
     
+    PLUGIN_KEY = 'XMigra plugin'
+    
     def initialize(path)
       @path = Pathname.new(path)
       @db_info = YAML.load_file(@path + DBINFO_FILE)
@@ -28,12 +30,20 @@ module XMigra
           m.manages(path)
         } || NoSpecifics
       )
+      
+      if @db_info.has_key? PLUGIN_KEY
+        @plugin = @db_info[PLUGIN_KEY]
+      end
     end
     
-    attr_reader :path
+    attr_reader :path, :plugin
     
     def branch_upgrade_file
       @path.join(STRUCTURE_SUBDIR, VERINC_FILE)
+    end
+    
+    def load_plugin!
+      Plugin.load! plugin if plugin
     end
   end
 end
