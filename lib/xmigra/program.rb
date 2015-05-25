@@ -42,7 +42,7 @@ module XMigra
             end
           rescue TerminatingOption => stop
             return stop
-          rescue PluginLoadingError => error
+          rescue Plugin::LoadingError => error
             $stderr.puts error.message
             exit 1
           end

@@ -1,7 +1,5 @@
 
 module XMigra
-  class PluginLoadingError < LoadError; end
-  
   class SchemaManipulator
     DBINFO_FILE = 'database.yaml'
     PERMISSIONS_FILE = 'permissions.yaml'
@@ -45,13 +43,7 @@ module XMigra
     end
     
     def load_plugin!
-      require plugin if plugin
-    rescue LoadError => e
-      if e.path == plugin
-        raise PluginLoadingError, "The XMigra plugin #{plugin.inspect} is not installed (Kernel#require failed)."
-      else
-        raise
-      end
+      Plugin.load! plugin if plugin
     end
   end
 end

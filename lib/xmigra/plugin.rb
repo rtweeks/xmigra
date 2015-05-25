@@ -2,33 +2,56 @@ module XMigra
   
   # Base class for XMigra plugins.
   #
-  # Derive a class from this class, instantiate, and call +activate!+ on the
-  # instance.
+  # Derive a class from this class, then call XMigra::Plugin.activate! with
+  # a block that instantiates your class.
   #
+  #   require "xmigra/plugin"
+  #   
   #   class YearTemplatePlugin < XMigra::Plugin
   #     def amend_composed_sql(sql)
   #       sql.gsub! '[{year}]', Date.today.year.to_s
   #     end
   #   end
+  #   
+  #   XMigra::Plugin.activate! {YearTemplatePlugin.new}
   #
-  #   YearTemplatePlugin.new.activate!
-  #
-  # It is best practice to define the plugin class in one file and then, in
-  # a second file, require the first file, instantiate the class, and activate
-  # the plugin.
+  # The last call to XMigra::Plugin.activate! will determine which block will
+  # be executed to return the active plugin, so make sure to +require+ any
+  # plugins to be aggregated before activating your own.
   
   class Plugin
+    class LoadingError < ::LoadError; end
+    
     class <<self
       attr_reader :active
-    end
-    
-    
-    # Make this XMigra::Plugin instance the active instance.  Only one
-    # plugin may be active at any time.
-    
-    def activate!
-      $stderr.puts "WARNING: Another plugin (type #{Plugin.active.class}) already active." if Plugin.active
-      Plugin.instance_variable_set :@active, self
+      
+      def loading?
+        !!@load_depth
+      end
+      
+      def load!(name)
+        previous_depth, @load_depth = @load_depth, (@load_depth || 0) + 1
+        @activation = nil if previous_depth.nil?
+        begin
+          require name
+        rescue ::LoadError => error
+          if previous_depth.nil? && error.path == name
+            raise LoadingError, "The XMigra plugin #{name.inspect} is not installed (Kernel#require failed)."
+          else
+            raise
+          end
+        ensure
+          @load_depth = previous_depth
+        end
+        
+        if previous_depth.nil? && @activation
+          @active = @activation.call
+        end
+      end
+      
+      def activate!(&blk)
+        @activation = blk
+      end
     end
     
     
@@ -37,7 +60,7 @@ module XMigra
     # modifications made to this object will be reflected in the script.
     # XMigra only calls this method to amend SQL read in from source files.
     #
-    # The default implementation does nothing
+    # The default implementation does nothing.
     
     def amend_source_sql(sql)
     end
