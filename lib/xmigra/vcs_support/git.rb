@@ -244,6 +244,14 @@ module XMigra
       git(:rm, path, :get_result=>false)
     end
     
+    def vcs_production_contents(path)
+      return nil unless git_master_head(:required => false)
+      git_fetch_master_branch
+      git(:show, [git_master_local_branch, git_internal_path].join(':'), :quiet=>true)
+    rescue VersionControlError
+      return nil
+    end
+    
     def production_pattern
       ".+"
     end
