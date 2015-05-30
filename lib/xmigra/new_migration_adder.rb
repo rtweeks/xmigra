@@ -23,6 +23,13 @@ module XMigra
       end
       Hash === head_info or raise XMigra::Error, "Invalid #{MigrationChain::HEAD_FILE} format"
       
+      if !head_info.empty? && respond_to?(:vcs_production_contents) && (production_head_contents = vcs_production_contents(head_file))
+        production_head_info = YAML.load(production_head_contents)
+        extending_production = head_info[MigrationChain::LATEST_CHANGE] == production_head_info[MigrationChain::LATEST_CHANGE]
+      else
+        extending_production = false
+      end
+      
       new_fpath = struct_dir.join(
         [Date.today.strftime("%Y-%m-%d"), summary].join(' ') + '.yaml'
       )
@@ -66,6 +73,10 @@ module XMigra
         
         rm_method.call(obufp) if obufp.exist?
         mv_method.call(bufp, obufp)
+      end
+      
+      if extending_production && respond_to?(:production_chain_extended)
+        production_chain_extended
       end
       
       return new_fpath
