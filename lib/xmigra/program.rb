@@ -349,7 +349,9 @@ migration, and is included in the upgrade metadata stored in the database.  Use
 of the '%program_cmd new' command is recommended; it handles several tiresome
 and error-prone tasks: creating a new migration file with a conformant name,
 setting the "starting from" section to the correct value, and updating
-SCHEMA/structure/head.yaml to reference the newly generated file.
+SCHEMA/structure/head.yaml to reference the newly generated file.  It can also
+print a warning or run a command when the source condition indicates a database
+backup would be a good idea.
 
 The SCHEMA/structure/head.yaml file deserves special note: it contains a
 reference to the last migration to be applied.  Because of this, parallel
@@ -672,6 +674,16 @@ This command generates a new migration file and ties it into the current
 migration chain.  The name of the new file is generated from today's date and
 the given MIGRATION_SUMMARY.  The resulting new file may be opened in an
 editor (see the --[no-]edit option).
+
+If this command extends the production migration chain, it will attempt to
+locate a handler function ("on-prod-chain-extended-local", a VCS-specified
+handler, or "on-prod-chain-extended") executable from the schema root
+directory.  If it cannot locate one of these, it will print a message about
+the advisability of taking a backup of the development database.
+
+Git VCS specifics: The #{GitSpecifics::PRODUCTION_CHAIN_EXTENSION_COMMAND} attribute on the
+database.yaml file can be used to specify a handler for the production chain
+extension.
 END_OF_HELP
       
       argument_error_unless(args.length == 1,

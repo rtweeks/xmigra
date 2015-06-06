@@ -22,7 +22,7 @@ module XMigra
       def run_svn(subcmd, *args)
         options = (Hash === args[-1]) ? args.pop : {}
         no_result = !options.fetch(:get_result, true)
-        raw_result = options.fetch(:raw, false)
+        raw_result = options.fetch(:raw, false) || subcmd.to_s == 'cat'
         
         cmd_parts = ["svn", subcmd.to_s]
         cmd_parts << "--xml" unless no_result || raw_result
@@ -234,6 +234,108 @@ END_OF_MESSAGE
     def subversion_info
       return @subversion_info if defined? @subversion_info
       return @subversion_info = subversion(:info, self.path)
+    end
+    
+    def vcs_production_contents(path)
+      path = Pathname(path)
+      
+      # Check for a production pattern.  If none exists, there is no way to
+      # identify which branches are production, so essentially no production
+      # content:
+      prod_pat = self.production_pattern
+      return nil if prod_pat.nil?
+      prod_pat = Regexp.compile(prod_pat.chomp)
+      
+      # Is the current branch a production branch?  If so, cat the committed
+      # version:
+      if branch_identifier =~ prod_pat
+        return svn(:cat, path.to_s)
+      end
+      
+      # Use an SvnHistoryTracer to walk back through the history of self.path
+      # looking for a copy from a production branch.
+      tracer = SvnHistoryTracer.new(self.path)
+      
+      while !(match = tracer.earliest_loaded_repopath =~ prod_pat) && tracer.load_parent_commit
+        # loop
+      end
+      
+      if match
+        subversion(:cat, "-r#{tracer.earliest_loaded_revision}", path.to_s)
+      end
+    end
+  end
+  
+  class SvnHistoryTracer
+    include SubversionSpecifics
+    
+    def initialize(path)
+      @path = Pathname(path)
+      info_doc = subversion(:info, path.to_s)
+      @root_url = info_doc.elements['string(info/entry/repository/root)']
+      @most_recent_commit = info_doc.elements['string(info/entry/@revision)'].to_i
+      @history = []
+      @next_query = [branch_identifier, @most_recent_commit]
+      @history.unshift(@next_query.dup)
+    end
+    
+    attr_reader :path, :most_recent_commit, :history
+    
+    def load_parent_commit
+      log_doc = next_earlier_log
+      if copy_elt = copying_element(log_doc)
+        trailing_part = branch_identifier[copy_elt.text.length..-1]
+        @next_query = [
+          copy_elt.attributes['copyfrom-path'] + trailing_part,
+          copy_elt.attributes['copyfrom-rev'].to_i
+        ]
+        @history.unshift(@next_query)
+        @next_query.dup
+      elsif change_elt = log_doc.elements['/log/logentry']
+        @next_query[1] = change_elt.attributes['revision'].to_i - 1
+        @next_query.dup if @next_query[1] > 0
+      else
+        @next_query[1] -= 1
+        @next_query.dup if @next_query[1] > 0
+      end
+    end
+    
+    def history_exhausted?
+      @next_query[1] <= 0
+    end
+    
+    def earliest_loaded_repopath
+      history[0][0]
+    end
+    
+    def earliest_loaded_url
+      @root_url + history[0][0]
+    end
+    
+    def earliest_loaded_revision
+      history[0][1]
+    end
+    
+    def earliest_loaded_pinned_url(rel_path=nil)
+      pin_rev = @history[0][1]
+      if rel_path.nil?
+        [earliest_loaded_url, pin_rev.to_s].join('@')
+      else
+        rel_path = Pathname(rel_path)
+        "#{earliest_loaded_url}/#{rel_path}@#{pin_rev}"
+      end
+    end
+    
+    def copying_element(log_doc)
+      log_doc.each_element %Q{/log/logentry/paths/path[@copyfrom-path]} do |elt|
+        return elt if elt.text == @next_query[0]
+        return elt if @next_query[0].start_with? (elt.text + '/')
+      end
+      return nil
+    end
+    
+    def next_earlier_log
+      subversion(:log, '-l1', '-v', "-r#{@next_query[1]}:1", self.path)
     end
   end
 end

@@ -239,4 +239,33 @@ if GIT_PRESENT
       end
     end
   end
+  
+  run_test "XMigra detects extension of the production migration chain" do
+    capture_chain_extension = Module.new do
+      def production_chain_extended(*args)
+        (@captured_call_args ||= []) << args
+      end
+      
+      attr_reader :captured_call_args
+    end
+    
+    2.temp_dirs do |upstream, repo|
+      initialize_git_repo(upstream)
+      
+      Dir.chdir(upstream) do
+        commit_a_migration "first table"
+        make_this_branch_master
+      end
+      
+      `git clone "#{upstream.expand_path}" "#{repo}" 2>/dev/null`
+      
+      Dir.chdir(repo) do
+        XMigra::NewMigrationAdder.new('.') do |tool|
+          tool.extend(capture_chain_extension)
+          tool.add_migration('Create foo table')
+          assert_eq tool.captured_call_args, [[]]
+        end
+      end
+    end
+  end
 end
