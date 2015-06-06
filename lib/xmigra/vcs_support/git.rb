@@ -6,6 +6,7 @@ module XMigra
     
     MASTER_HEAD_ATTRIBUTE = 'xmigra-master'
     MASTER_BRANCH_SUBDIR = 'xmigra-master'
+    PRODUCTION_CHAIN_EXTENSION_COMMAND = 'xmigra-on-production-chain-extended'
     
     class AttributesFile
       def initialize(effect_root, access=:shared)
@@ -250,6 +251,26 @@ module XMigra
       git(:show, [git_master_local_branch, git_internal_path].join(':'), :quiet=>true)
     rescue VersionControlError
       return nil
+    end
+    
+    def vcs_prod_chain_extension_handler
+      attr_val = GitSpecifics.attr_values(
+        PRODUCTION_CHAIN_EXTENSION_COMMAND,
+        self.path + SchemaManipulator::DBINFO_FILE,
+        :required=>false,
+      )[0]
+      
+      # Check for special value
+      return nil if attr_val == 'unspecified'
+      
+      handler_path = Pathname(attr_val)
+      if handler_path.absolute?
+        return handler_path if handler_path.exist?
+      else
+        handler_path = self.path + handler_path
+        return handler_path if handler_path.exist?
+      end
+      return attr_val
     end
     
     def production_pattern
