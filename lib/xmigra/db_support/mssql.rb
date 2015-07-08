@@ -71,14 +71,17 @@ GO
 
 SET NOCOUNT ON
 GO
-
+-------------------- ERROR REFERENCE LINE --------------------
+DECLARE @BATCH_START_OFFSET INTEGER; SET @BATCH_START_OFFSET = 0;
 BEGIN TRY
   BEGIN TRAN;
       END_OF_SQL
       
+      offset_lines = 5
       each_batch(yield) do |batch|
         batch_literal = MSSQLSpecifics.string_literal("\n" + batch)
-        parts << "EXEC sp_executesql @statement = #{batch_literal};"
+        parts << "SET @BATCH_START_OFFSET = #{offset_lines}; EXEC sp_executesql @statement = #{batch_literal}; SET @BATCH_START_OFFSET = 0;"
+        offset_lines += parts[-1].count("\n") + 1
       end
       
       parts << <<-"END_OF_SQL"
@@ -93,7 +96,7 @@ BEGIN CATCH
   
   PRINT N'Update failed: ' + ERROR_MESSAGE();
   PRINT N'    State: ' + CAST(ERROR_STATE() AS NVARCHAR);
-  PRINT N'    Line: ' + CAST(ERROR_LINE() AS NVARCHAR);
+  PRINT N'    Line: ' + CAST(@BATCH_START_OFFSET + ERROR_LINE() - 1 AS NVARCHAR) + N' after ERROR REFERENCE LINE'
 
   SELECT 
       @ErrorMessage = N'Update failed: ' + ERROR_MESSAGE(),
