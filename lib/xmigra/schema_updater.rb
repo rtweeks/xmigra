@@ -59,7 +59,11 @@ RUNNING THIS SCRIPT ON A PRODUCTION DATABASE WILL FAIL.
       "<#{self.class.name}: path=#{path.to_s.inspect}, db=#{@db_specifics}, vcs=#{@vcs_specifics}>"
     end
     
-    def in_ddl_transaction
+    def in_ddl_transaction(options = {})
+      if options[:dry_run]
+        raise(XMigra::Error, 'DDL transaction not supported; dry-run unavailable.')
+      end
+      
       yield
     end
     
