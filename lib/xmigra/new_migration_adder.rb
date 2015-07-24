@@ -5,6 +5,11 @@ module XMigra
   class NewMigrationAdder < SchemaManipulator
     OBSOLETE_VERINC_FILE = 'version-upgrade-obsolete.yaml'
     
+    # Return this class (not an instance of it) from a Proc yielded by
+    # each_possible_production_chain_extension_handler to continue through the
+    # handler chain.
+    class IgnoreHandler; end
+    
     def initialize(path)
       super(path)
     end
@@ -22,6 +27,13 @@ module XMigra
         {}
       end
       Hash === head_info or raise XMigra::Error, "Invalid #{MigrationChain::HEAD_FILE} format"
+      
+      if !head_info.empty? && respond_to?(:vcs_production_contents) && (production_head_contents = vcs_production_contents(head_file))
+        production_head_info = YAML.load(production_head_contents)
+        extending_production = head_info[MigrationChain::LATEST_CHANGE] == production_head_info[MigrationChain::LATEST_CHANGE]
+      else
+        extending_production = false
+      end
       
       new_fpath = struct_dir.join(
         [Date.today.strftime("%Y-%m-%d"), summary].join(' ') + '.yaml'
@@ -68,7 +80,58 @@ module XMigra
         mv_method.call(bufp, obufp)
       end
       
+      production_chain_extended if extending_production
+      
       return new_fpath
+    end
+    
+    # Called when the chain of migrations in the production/master branch is
+    # extended with a new migration.
+    #
+    # This method calls each_possible_production_chain_extension_handler to
+    # generate a chain of handlers.
+    #
+    def production_chain_extended
+      Dir.chdir(self.path) do
+        each_possible_production_chain_extension_handler do |handler|
+          if handler.kind_of? Proc
+            handler_result = handler[]
+            break true unless handler_result == IgnoreHandler
+          else
+            handler_result = system(handler)
+            break true unless handler_result.nil?
+          end
+        end
+      end
+    end
+    
+    # Yield command strings or Proc instances to attempt handling the
+    # production-chain-extension event
+    #
+    # Strings yielded by this method will be executed using Kernel#system.  If
+    # this results in `nil` (command does not exist), processing will continue
+    # through the remaining handlers.
+    #
+    # Procs yielded by this method will be executed without any parameters.
+    # Unless the invocation returns IgnoreHandler, event processing will
+    # terminate after invocation.
+    #
+    def each_possible_production_chain_extension_handler
+      yield "on-prod-chain-extended-local"
+      if respond_to?(:vcs_prod_chain_extension_handler) && (vcs_handler = vcs_prod_chain_extension_handler)
+        yield vcs_handler.to_s
+      end
+      yield "on-prod-chain-extended"
+      yield Proc.new {
+        next unless respond_to? :warning
+        warning(<<END_MESSAGE)
+This command has extended the production migration chain.
+
+Backing up your development database now may be advantageous in case you need
+to accept migrations developed in parallel from upstream before merging your
+work back to the mainline.
+END_MESSAGE
+      }
     end
   end
 end

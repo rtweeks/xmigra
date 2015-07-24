@@ -161,6 +161,14 @@ END_OF_HELP
             end
           end
           
+          if use[:dry_run]
+            options.dry_run = false
+            flags.on("--dry-run", "Generated script will test upgrade", 
+                     "  commands without committing changes") do
+              options.dry_run = true
+            end
+          end
+          
           options.source_dir = Dir.pwd
           flags.on("--source=DIR", "Work from/on the schema in DIR") do |dir|
             options.source_dir = File.expand_path(dir)
@@ -349,7 +357,9 @@ migration, and is included in the upgrade metadata stored in the database.  Use
 of the '%program_cmd new' command is recommended; it handles several tiresome
 and error-prone tasks: creating a new migration file with a conformant name,
 setting the "starting from" section to the correct value, and updating
-SCHEMA/structure/head.yaml to reference the newly generated file.
+SCHEMA/structure/head.yaml to reference the newly generated file.  It can also
+print a warning or run a command when the source condition indicates a database
+backup would be a good idea.
 
 The SCHEMA/structure/head.yaml file deserves special note: it contains a
 reference to the last migration to be applied.  Because of this, parallel
@@ -672,6 +682,16 @@ This command generates a new migration file and ties it into the current
 migration chain.  The name of the new file is generated from today's date and
 the given MIGRATION_SUMMARY.  The resulting new file may be opened in an
 editor (see the --[no-]edit option).
+
+If this command extends the production migration chain, it will attempt to
+locate a handler function ("on-prod-chain-extended-local", a VCS-specified
+handler, or "on-prod-chain-extended") executable from the schema root
+directory.  If it cannot locate one of these, it will print a message about
+the advisability of taking a backup of the development database.
+
+Git VCS specifics: The #{GitSpecifics::PRODUCTION_CHAIN_EXTENSION_COMMAND} attribute on the
+database.yaml file can be used to specify a handler for the production chain
+extension.
 END_OF_HELP
       
       argument_error_unless(args.length == 1,
@@ -689,7 +709,7 @@ END_OF_HELP
     end
     
     subcommand 'upgrade', "Generate an upgrade script" do |argv|
-      args, options = command_line(argv, {:production=>true, :outfile=>true},
+      args, options = command_line(argv, {:production=>true, :outfile=>true, :dry_run=>true},
                                    :help=> <<END_OF_HELP)
 Running this command will generate an update script from the source schema.
 Generation of a production script involves more checks on the status of the
@@ -705,6 +725,7 @@ END_OF_HELP
       sql_gen = SchemaUpdater.new(options.source_dir).extend(WarnToStderr)
       sql_gen.load_plugin!
       sql_gen.production = options.production
+      sql_gen.dry_run = options.dry_run
       
       output_to(options.outfile) do |out_stream|
         out_stream.print(sql_gen.update_sql)

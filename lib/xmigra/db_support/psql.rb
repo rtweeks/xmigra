@@ -23,8 +23,18 @@ module XMigra
     
     def filename_metavariable; "[{filename}]"; end
     
-    def in_ddl_transaction
-      ["BEGIN;", yield, "COMMIT;"].join("\n")
+    def in_ddl_transaction(options={})
+      transaction_wrapup = begin
+        if options[:dry_run]
+          PgSQLSpecifics.in_plpgsql(%Q{
+            RAISE NOTICE 'Dry-run successful.  Rolling back changes.';
+          }) + "\nROLLBACK;"
+        else
+          "COMMIT;"
+        end
+      end
+      
+      ["BEGIN;", yield, transaction_wrapup].join("\n")
     end
     
     def check_execution_environment_sql
