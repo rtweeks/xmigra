@@ -50,16 +50,21 @@ RUNNING THIS SCRIPT ON A PRODUCTION DATABASE WILL FAIL.
       end
       
       @production = false
+      @dry_run = false
     end
     
-    attr_accessor :production
+    attr_accessor :production, :dry_run
     attr_reader :migrations, :access_artifacts, :indexes, :branch_upgrade
     
     def inspect
       "<#{self.class.name}: path=#{path.to_s.inspect}, db=#{@db_specifics}, vcs=#{@vcs_specifics}>"
     end
     
-    def in_ddl_transaction
+    def in_ddl_transaction(options = {})
+      if options[:dry_run]
+        raise(XMigra::Error, 'DDL transaction not supported; dry-run unavailable.')
+      end
+      
       yield
     end
     
@@ -90,7 +95,7 @@ RUNNING THIS SCRIPT ON A PRODUCTION DATABASE WILL FAIL.
       intro_comment << "\n\n"
       
       # If supported, wrap transactionality around modifications
-      intro_comment + in_ddl_transaction do
+      intro_comment + in_ddl_transaction(:dry_run => @dry_run) do
         script_parts = [
           # Check for blatantly incorrect application of script, e.g. running
           # on master or template database.

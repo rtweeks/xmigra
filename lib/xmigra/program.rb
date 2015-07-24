@@ -161,6 +161,14 @@ END_OF_HELP
             end
           end
           
+          if use[:dry_run]
+            options.dry_run = false
+            flags.on("--dry-run", "Generated script will test upgrade", 
+                     "  commands without committing changes") do
+              options.dry_run = true
+            end
+          end
+          
           options.source_dir = Dir.pwd
           flags.on("--source=DIR", "Work from/on the schema in DIR") do |dir|
             options.source_dir = File.expand_path(dir)
@@ -701,7 +709,7 @@ END_OF_HELP
     end
     
     subcommand 'upgrade', "Generate an upgrade script" do |argv|
-      args, options = command_line(argv, {:production=>true, :outfile=>true},
+      args, options = command_line(argv, {:production=>true, :outfile=>true, :dry_run=>true},
                                    :help=> <<END_OF_HELP)
 Running this command will generate an update script from the source schema.
 Generation of a production script involves more checks on the status of the
@@ -717,6 +725,7 @@ END_OF_HELP
       sql_gen = SchemaUpdater.new(options.source_dir).extend(WarnToStderr)
       sql_gen.load_plugin!
       sql_gen.production = options.production
+      sql_gen.dry_run = options.dry_run
       
       output_to(options.outfile) do |out_stream|
         out_stream.print(sql_gen.update_sql)

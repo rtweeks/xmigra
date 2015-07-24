@@ -57,7 +57,7 @@ module XMigra
       return @stats_objs
     end
     
-    def in_ddl_transaction
+    def in_ddl_transaction(options={})
       parts = []
       parts << <<-"END_OF_SQL"
 SET ANSI_NULLS ON
@@ -84,8 +84,12 @@ BEGIN TRY
         offset_lines += parts[-1].count("\n") + 1
       end
       
+      if options[:dry_run]
+        parts << "  PRINT N'Dry-run successful.  Rolling back changes.'; ROLLBACK TRAN;"
+      else
+        parts << "  COMMIT TRAN;"
+      end
       parts << <<-"END_OF_SQL"
-  COMMIT TRAN;
 END TRY
 BEGIN CATCH
   ROLLBACK TRAN;
