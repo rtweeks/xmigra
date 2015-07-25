@@ -107,8 +107,8 @@ module XMigra
             flags.on(
               "--by=TYPE", allowed,
               "Specify how TARGETs are matched",
-              "against subject strings",
-              "(#{allowed.collect {|i| i.to_s}.join(', ')})"
+              "  against subject strings",
+              "  (#{allowed.collect {|i| i.to_s}.join(', ')})"
             ) do |type|
               options.target_type = type
             end
@@ -129,7 +129,7 @@ VISUAL is preferred, then the one specified by EDITOR.  If neither of these
 environment variables is set no editor will be opened.
 END_OF_HELP
             flags.on("--[no-]edit", "Open the resulting file in an editor",
-                     "(defaults to #{options.edit})") do |v|
+                     "  (defaults to #{options.edit})") do |v|
               options.edit = %w{EDITOR VISUAL}.any? {|k| ENV.has_key?(k)} && v
             end
           end
@@ -140,10 +140,19 @@ END_OF_HELP
             flags.on(
               "--match=SUBJECT", allowed,
               "Specify the type of subject against",
-              "which TARGETs match",
-              "(#{allowed.collect {|i| i.to_s}.join(', ')})"
+              "  which TARGETs match",
+              "  (#{allowed.collect {|i| i.to_s}.join(', ')})"
             ) do |type|
               options.search_type = type
+            end
+          end
+          
+          if use[:permissions_too]
+            options.include_permissions = nil
+            flags.on("--[no-]grants-included",
+                     "Include (or exclude) permission grants",
+                     "  (overrides setting in #{SchemaManipulator::DBINFO_FILE})") do |v|
+              options.include_permissions = v
             end
           end
           
@@ -163,8 +172,8 @@ END_OF_HELP
           
           if use[:dry_run]
             options.dry_run = false
-            flags.on("--dry-run", "Generated script will test upgrade", 
-                     "  commands without committing changes") do
+            flags.on("--dry-run", "Generated script will test commands", 
+                     "  without committing changes") do
               options.dry_run = true
             end
           end
@@ -523,6 +532,13 @@ the plugin.  While the resulting script will still (if possible) be transacted,
 the incompatibility may not be discovered until the script is run against a
 production database, requiring cancellation of deployment.  Use this feature
 with extreme caution.
+
+grants in upgrade
+-----------------
+
+This section optionally (defaulting to "false") specifies whether permission
+management is included in generated upgrade scripts.  The behavior specified by
+this section may be overridden on the command line with an option.
 END_SECTION
       end
       begin; section['Script Generation Modes', <<END_SECTION]
@@ -709,7 +725,7 @@ END_OF_HELP
     end
     
     subcommand 'upgrade', "Generate an upgrade script" do |argv|
-      args, options = command_line(argv, {:production=>true, :outfile=>true, :dry_run=>true},
+      args, options = command_line(argv, {:production=>true, :outfile=>true, :dry_run=>true, :permissions_too=>true},
                                    :help=> <<END_OF_HELP)
 Running this command will generate an update script from the source schema.
 Generation of a production script involves more checks on the status of the
@@ -726,6 +742,7 @@ END_OF_HELP
       sql_gen.load_plugin!
       sql_gen.production = options.production
       sql_gen.dry_run = options.dry_run
+      sql_gen.include_grants = options.include_permissions
       
       output_to(options.outfile) do |out_stream|
         out_stream.print(sql_gen.update_sql)

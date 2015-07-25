@@ -51,9 +51,10 @@ RUNNING THIS SCRIPT ON A PRODUCTION DATABASE WILL FAIL.
       
       @production = false
       @dry_run = false
+      @include_grants = nil
     end
     
-    attr_accessor :production, :dry_run
+    attr_accessor :production, :dry_run, :include_grants
     attr_reader :migrations, :access_artifacts, :indexes, :branch_upgrade
     
     def inspect
@@ -143,10 +144,14 @@ RUNNING THIS SCRIPT ON A PRODUCTION DATABASE WILL FAIL.
           
           # Create any desired indexes that don't yet exist
           :create_new_indexes_sql,
-          
-          # Any cleanup needed
-          :upgrade_cleanup_sql,
         ]
+        
+        if include_grants_in_upgrade?
+          script_parts << :grant_access_sql
+        end
+        
+        # Any cleanup needed
+        script_parts << :upgrade_cleanup_sql
         
         amend_script_parts(script_parts)
         
@@ -183,6 +188,17 @@ RUNNING THIS SCRIPT ON A PRODUCTION DATABASE WILL FAIL.
     def branch_upgrade_sql
     end
     
+    def grant_access_sql
+      sql_gen = PermissionScriptWriter.new(path)
+      if respond_to?(:warning)
+        updater = self
+        sql_gen.define_singleton_method(:warning) do |message|
+          updater.warning(message)
+        end
+      end
+      return sql_gen.permissions_sql(:transactional => false)
+    end
+    
     def upgrade_cleanup_sql
     end
     
@@ -193,6 +209,11 @@ RUNNING THIS SCRIPT ON A PRODUCTION DATABASE WILL FAIL.
       @file_based_groups.each do |group|
         group.each {|item| yield item.file_path}
       end
+    end
+    
+    def include_grants_in_upgrade?
+      return @include_grants unless @include_grants.nil?
+      return @db_info.fetch('grants in upgrade', false)
     end
   end
 end
