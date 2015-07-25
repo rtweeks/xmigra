@@ -17,11 +17,11 @@ module XMigra
     
     def ddl_block_separator; "\n"; end
     
-    def permissions_sql
-      intro_comment = @db_info.fetch('script comment', '') + "\n\n"
-      
-      intro_comment + in_ddl_transaction do
-        [
+    def permissions_sql(options = {})
+      "".tap do |result|
+        result << @db_info.fetch('script comment', '') + "\n\n"
+        
+        transaction_sql = [
           # Check for blatantly incorrect application of script, e.g. running
           # on master or template database.
           check_execution_environment_sql,
@@ -38,6 +38,12 @@ module XMigra
           
         ].flatten.compact.join(ddl_block_separator).tap do |result|
           Plugin.active.amend_composed_sql(result) if Plugin.active
+        end
+        
+        if options.fetch(:transactional, true)
+          result << in_ddl_transaction {transaction_sql}
+        else
+          result << transaction_sql
         end
       end
     end
