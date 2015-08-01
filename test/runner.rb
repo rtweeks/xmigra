@@ -96,8 +96,25 @@ def assert_neq(actual, expected)
   assert(proc {"Value #{actual.inspect} was unexpected"}) {actual != expected}
 end
 
+def include_test(container, item)
+  case
+  when item.kind_of?(Regexp) && container.kind_of?(String)
+    item.match container
+  else
+    container.include? item
+  end
+end
+
 def assert_include(container, item)
-  assert(proc {"#{item.inspect} was not in #{container.inspect}"}) {container.include? item}
+  assert(proc {"#{item.inspect} was not in #{container.inspect}"}) do
+    include_test container, item
+  end
+end
+
+def assert_not_include(container, item)
+  assert(proc {"#{item.inspect} was in #{container.inspect}"}) do
+    !include_test container, item
+  end
 end
 
 def assert_raises(expected_exception)
