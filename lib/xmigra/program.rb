@@ -464,6 +464,11 @@ square brackets as a quotation mechanism, and square brackets have special
 meaning in YAML, so it is necessary use quoted strings or a scalar block to
 contain them).  Any access objects listed in this way will be created before
 the referencing object.
+
+Through use of the "--function", "--procedure", or "--view" flags, the
+'%program_cmd new' command can be directed to generate a skeleton file for
+this directory, with the option of opening the resulting file in an editor.
+Please see '%program_cmd help new' for details.
 END_SECTION
       end
       begin; section['The "SCHEMA/indexes" Folder', <<END_SECTION]
@@ -487,6 +492,10 @@ Index definition files use only the "sql" section to provide the SQL definition
 of the index.  Index definitions do not support use of the filename
 metavariable because renaming an index would cause it to be dropped and
 re-created.
+
+As is the case for files in the SCHEMA/access folder, the skeleton for a new
+index can be generated with the '%program_cmd new --index' command.  Details
+are available with '%program_cmd help new'.
 END_SECTION
       end
       begin; section['The "SCHEMA/database.yaml" File', <<END_SECTION]
