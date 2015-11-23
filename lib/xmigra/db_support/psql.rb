@@ -704,6 +704,35 @@ module XMigra
       return parts.join("\n")
     end
     
+    def index_template_sql
+      XMigra.dedent(%Q{
+        CREATE INDEX [{filename}]
+        ON <<<table>>> (<<<columns>>>);
+      })
+    end
+    
+    def view_definition_template_sql
+      XMigra.dedent(%Q{
+        CREATE VIEW [{filename}]
+        AS SELECT <<<query>>>;
+      })
+    end
+    
+    def procedure_definition_template_sql
+      raise XMigra::NewAccessArtifactAdder::UnsupportedArtifactType.new(:procedure, SYSTEM_NAME)
+    end
+    
+    def function_definition_template_sql
+      XMigra.dedent(%Q{
+        CREATE FUNCTION [{filename}] (
+          <<<parameters>>>
+        ) RETURNS <<<return-type>>>
+        AS $$
+          <<<function-body>>>
+        $$ LANGUAGE plpgsql;
+      })
+    end
+    
     class <<self
       def in_plpgsql(*args)
         variables = args[0].kind_of?(Hash) ? args.shift : {}

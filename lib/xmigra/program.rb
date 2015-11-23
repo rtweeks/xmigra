@@ -101,6 +101,22 @@ module XMigra
           flags.separator ''
           flags.separator 'Subcommand options:'
           
+          if use[:source_file_type]
+            options.source_file_type = nil
+            [
+              '--migration migration',
+              '--view view',
+              '--procedure stored procedure',
+              '--function user defined function',
+              '--index index',
+            ].each do |opt|
+              flag, desc = opt.split(' ', 2)
+              flags.on(flag, "Select #{desc} as the source file type") do
+                set_source_type(options, flag[2..-1].to_sym)
+              end
+            end
+          end
+          
           if use[:target_type]
             options.target_type = :unspecified
             allowed = [:exact, :substring, :regexp]
@@ -226,6 +242,14 @@ END_OF_HELP
         when editor = ENV['EDITOR']
           system(%Q{#{editor} "#{fpath}"})
         end
+      end
+      
+      def set_source_type(options, type)
+        argument_error_unless(
+          [nil, type].include?(options.source_file_type),
+          "Source type cannot be #{options.source_file_type} and #{type}"
+        )
+        options.source_file_type = type
       end
     end
     
@@ -690,14 +714,29 @@ END_OF_HELP
       end
     end
     
-    subcommand 'new', "Create a new migration file" do |argv|
-      args, options = command_line(argv, {:edit=>true},
-                                   :argument_desc=>"MIGRATION_SUMMARY",
+    subcommand 'new', "Create a new source file" do |argv|
+      args, options = command_line(argv, {:edit=>true, :source_file_type=>true},
+                                   :argument_desc=>"MIGRATION_SUMMARY_OR_NAME",
                                    :help=> <<END_OF_HELP)
-This command generates a new migration file and ties it into the current
-migration chain.  The name of the new file is generated from today's date and
-the given MIGRATION_SUMMARY.  The resulting new file may be opened in an
-editor (see the --[no-]edit option).
+This command generates a new XMigra source file.  It can create a migration
+file or a view, stored procedure, user defined function, or index definition
+file, with the the default being a migration file.
+
+When generating a migration file, MIGRATION_SUMMARY_OR_NAME is taken as a
+brief summary of the migration and used, along with today's date, to generate
+a name for the migration file.
+
+When index definition file generation is selected, MIGRATION_SUMMARY_OR_NAME
+is taken as the name of the index to create, and an index file with this
+name and skeleton content will be created.
+
+Otherwise, MIGRATION_SUMMARY_OR_NAME will be taken as the name of the access
+artifact to create, and the file will be named for it and appropriate skeleton
+content will be generated.  This command may fail with an error for source
+file types not supported by the database system declared in database.yaml.
+
+In all cases, the resulting new file may be opened in an editor (see the
+--[no-]edit option).
 
 If this command extends the production migration chain, it will attempt to
 locate a handler function ("on-prod-chain-extended-local", a VCS-specified
@@ -712,15 +751,32 @@ END_OF_HELP
       
       argument_error_unless(args.length == 1,
                             "'%prog %cmd' takes one argument.")
-      migration_summary = args[0]
+      file_type = options.source_file_type || :migration
+      if file_type == :migration
+        tool_spec = [NewMigrationAdder, :add_migration]
+        arg_desc = "Migration summary"
+      elsif file_type == :index
+        tool_spec = [NewIndexAdder, :add_index]
+        arg_desc = "Index name"
+      else
+        tool_spec = [NewAccessArtifactAdder, :add_artifact, true]
+        arg_desc = "Access artifact name"
+      end
+      
       argument_error_unless(
-        migration_summary.chars.all? {|c| !ILLEGAL_FILENAME_CHARS.include?(c)},
-        "Migration summary may not contain any of: " + ILLEGAL_FILENAME_CHARS
+        args[0].chars.all? {|c| !ILLEGAL_FILENAME_CHARS.include?(c)},
+        arg_desc + " may not contain any of: " + ILLEGAL_FILENAME_CHARS
       )
       
-      tool = NewMigrationAdder.new(options.source_dir).extend(WarnToStderr)
-      new_fpath = tool.add_migration(migration_summary)
-      
+      tool = tool_spec[0].new(options.source_dir).extend(WarnToStderr)
+      create_proc = tool.method(tool_spec[1])
+      new_fpath = begin
+        if tool_spec[2]
+          create_proc.call(file_type, args[0])
+        else
+          create_proc.call(args[0])
+        end
+      end
       edit(new_fpath) if options.edit
     end
     

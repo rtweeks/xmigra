@@ -1153,6 +1153,42 @@ INSERT INTO [xmigra].[branch_upgrade] ([Current]) VALUES (#{branch_id_literal});
       return parts.join("\n")
     end
     
+    def index_template_sql
+      <<-"END_OF_SQL"
+CREATE INDEX [{filename}]
+ON <<<table>>> (<<<columns>>>);
+END_OF_SQL
+    end
+    
+    def view_definition_template_sql
+      <<-"END_OF_SQL"
+CREATE VIEW [{filename}]
+AS SELECT <<<query>>>;
+END_OF_SQL
+    end
+    
+    def procedure_definition_template_sql
+      <<-"END_OF_SQL"
+CREATE PROCEDURE [{filename}]
+  <<<parameters>>>
+AS BEGIN
+  <<<statements>>>
+END
+END_OF_SQL
+    end
+    
+    def function_definition_template_sql
+      <<-"END_OF_SQL"
+CREATE FUNCTION [{filename}] (
+  <<<parameters>>>
+) RETURNS <<<return-type>>>
+AS BEGIN
+  <<<statements>>>
+  RETURN <<<return-value-expression>>>;
+END
+END_OF_SQL
+    end
+    
     class << self
       def strip_identifier_quoting(s)
         case
