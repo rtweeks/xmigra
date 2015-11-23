@@ -38,10 +38,10 @@ def initialize_xmigra_schema(path='.', options={})
   end
 end
 
-def in_xmigra_schema
+def in_xmigra_schema(options={})
   1.temp_dirs do |schema|
     Dir.chdir(schema) do
-      initialize_xmigra_schema
+      initialize_xmigra_schema('.', options)
       yield
     end
   end

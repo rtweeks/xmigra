@@ -8,6 +8,7 @@ require 'tmpdir'
 TESTS = %w[
   git_vcs
   reversions
+  new_files
 ]
 
 $:.unshift Pathname(__FILE__).expand_path.dirname.dirname + 'lib'
