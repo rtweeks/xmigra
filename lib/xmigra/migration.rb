@@ -16,6 +16,7 @@ module XMigra
       @description = info["description"].dup.freeze
       @changes = (info[CHANGES] || []).dup.freeze
       @changes.each {|c| c.freeze}
+      @all_info = Marshal.load(Marshal.dump(info))
     end
     
     attr_reader :id, :follows, :description, :changes

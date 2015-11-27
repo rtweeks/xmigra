@@ -82,6 +82,7 @@ RUNNING THIS SCRIPT ON A PRODUCTION DATABASE WILL FAIL.
       end
       
       check_working_copy!
+      migrations.check_declaratives_current!
       
       intro_comment = @db_info.fetch('script comment', '')
       if Plugin.active

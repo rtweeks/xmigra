@@ -1,4 +1,5 @@
 
+require 'xmigra/declarative_migration'
 require 'xmigra/migration'
 
 module XMigra
@@ -7,8 +8,11 @@ module XMigra
     LATEST_CHANGE = 'latest change'
     MIGRATION_FILE_PATTERN = /^\d{4}-\d\d-\d\d.*\.yaml$/i
     
+    include DeclarativeMigration::ChainSupport
+    
     def initialize(path, options={})
       super()
+      @path = Pathname(path)
       
       db_specifics = options[:db_specifics]
       vcs_specifics = options[:vcs_specifics]
@@ -33,6 +37,9 @@ module XMigra
         migration.file_path = File.expand_path(fpath)
         migration.extend(db_specifics) if db_specifics
         migration.extend(vcs_specifics) if vcs_specifics
+        if migration.file_path.end_with? ".decl.yaml"
+          migration.extend(DeclarativeMigration)
+        end
         unshift(migration)
         prev_file = file
         file = migration.follows
@@ -49,6 +56,8 @@ module XMigra
       end
       @other_migrations.freeze
     end
+    
+    attr_reader :path
     
     # Test if the chain reaches back to the empty database
     def complete?
