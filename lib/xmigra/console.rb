@@ -42,6 +42,7 @@ module XMigra
       end
       
       def get_selection
+        selection = nil
         loop do
           selection = show_once
           break unless selection.nil?
