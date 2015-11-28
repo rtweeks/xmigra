@@ -39,7 +39,10 @@ def run_test(name, &block)
   
   $test_count += 1
   
+  msg_receiver, msg_sender = IO.pipe
+  
   if child_pid = Process.fork
+    msg_sender.close
     Process.wait(child_pid)
     
     if $?.success?
@@ -49,7 +52,14 @@ def run_test(name, &block)
       print 'F'
       $tests_failed << name
     end
+    
+    if (test_message = msg_receiver.read).length > 0
+      ($test_messages ||= {})[name] = test_message
+    end
+    msg_receiver.close
   else
+    msg_receiver.close
+    
     begin
       prev_stdout = $stdout
       $stdout = StringIO.new
@@ -60,11 +70,11 @@ def run_test(name, &block)
       end
       exit! 0
     rescue AssertionFailure
+      msg_sender.puts $!
       exit! 2
     rescue
-      puts
-      puts "Exception: #{$!}"
-      puts $!.backtrace
+      msg_sender.puts "#{$!.class}: #{$!}"
+      msg_sender.puts $!.backtrace
       exit! 1
     end
   end
@@ -173,3 +183,11 @@ puts
 puts "#{$test_successes}/#{$test_count} succeeded" if $test_options.show_counts
 puts "Failed tests:" unless $tests_failed.empty?
 $tests_failed.each {|name| puts "    #{name}"}
+
+($test_messages || {}).each_pair do |test_name, message|
+  puts
+  puts "----- #{test_name} -----"
+  message.each_line do |msg_line|
+    puts msg_line.chomp
+  end
+end
