@@ -75,6 +75,11 @@ def run_test(name, &block)
     rescue
       msg_sender.puts "#{$!.class}: #{$!}"
       msg_sender.puts $!.backtrace
+      $!.each_causing_exception do |ex|
+        msg_sender.puts
+        msg_sender.puts "Caused by #{ex.class}: #{ex}"
+        msg_sender.puts ex.backtrace
+      end
       exit! 1
     end
   end
