@@ -88,7 +88,7 @@ module XMigra
         end
         
         questionable_migrations = latest_declarative_implementations.values.each do |m|
-          next unless [:adoption, :renunciation].include?(m.goal)
+          next unless m.management_migration?
           raise(
             QuestionableImplementationError,
             "#{m.file_path} cannot execute SQL for a declarative #{m.goal}"
@@ -110,7 +110,7 @@ module XMigra
     # Override the way the base class handles changes -- this integrates with
     # the "history" command
     def changes
-      if [:adoption, :renunciation].include? goal
+      if management_migration?
         []
       else
         [affected_object]
@@ -118,11 +118,15 @@ module XMigra
     end
     
     def sql
-      if [:adoption, :renunciation].include? goal
+      if management_migration?
         ''
       else
         super()
       end
+    end
+    
+    def management_migration?
+      [:adoption, :renunciation].include? goal
     end
     
     # This method is only used when the declarative file has uncommitted
