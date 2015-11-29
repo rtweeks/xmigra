@@ -32,20 +32,25 @@ module XMigra
         raise NoChangesError, "#{file_path} changed in #{bad_rel} the latest implementing migration #{prev_impl.file_path}"
       end
       
-      # The same user on the same day should not impdecl two different deltas
-      # starting at the same committed version -- it will cause a migration
-      # name collision.
+      # This should require the same user to generate a migration on the same
+      # day starting from the same committed version working on the same
+      # branch to cause a collision of migration file names:
       file_hash = begin
         file_base = begin
-          SchemaUpdater.new(path).branch_identifier + vcs_latest_revision(file_path)
+          [
+            SchemaUpdater.new(path).branch_identifier,
+            vcs_latest_revision(file_path),
+          ].join("\x00")
         rescue VersionControlError
           ''
         end
         XMigra.secure_digest(
-          [(ENV['USER'] || ENV['USERNAME']).to_s, file_base.to_s].join("\x00")
-        )[0,8].tr('+/', '-_')
+          [(ENV['USER'] || ENV['USERNAME']).to_s, file_base.to_s].join("\x00"),
+          :encoding=>:base32
+        )[0,12]
       end
       summary = "#{file_path.basename('.yaml')}-#{file_hash}.decl"
+      
       add_migration_options = {
         :file_path=>file_path,
       }
