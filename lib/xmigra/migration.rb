@@ -12,7 +12,7 @@ module XMigra
       @id = info['id'].dup.freeze
       _follows = info[FOLLOWS]
       @follows = (_follows.dup.freeze unless _follows == EMPTY_DB)
-      @sql = info["sql"].dup.freeze
+      @sql = info.has_key?('sql') ? info["sql"].dup.freeze : nil
       @description = info["description"].dup.freeze
       @changes = (info[CHANGES] || []).dup.freeze
       @changes.each {|c| c.freeze}
@@ -28,7 +28,7 @@ module XMigra
     
     def sql
       if Plugin.active
-        @sql.dup.tap do |result|
+        (@sql || "").dup.tap do |result|
           Plugin.active.amend_source_sql(result)
         end
       else

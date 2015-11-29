@@ -38,7 +38,8 @@ RUNNING THIS SCRIPT ON A PRODUCTION DATABASE WILL FAIL.
         ))
         @file_based_groups << (@migrations = MigrationChain.new(
           @path.join(STRUCTURE_SUBDIR),
-          :db_specifics=>@db_specifics
+          :db_specifics=>@db_specifics,
+          :vcs_specifics=>@vcs_specifics,
         ))
         
         @branch_upgrade = BranchUpgrade.new(branch_upgrade_file)

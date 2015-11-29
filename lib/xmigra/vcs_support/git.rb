@@ -161,7 +161,12 @@ module XMigra
     end
     
     def git(*args)
-      Dir.chdir(self.path) do |pwd|
+      begin
+        _path = self.path
+      rescue NameError
+        _path = Pathname(self.file_path).dirname
+      end
+      Dir.chdir(_path) do |pwd|
         GitSpecifics.run_git(*args)
       end
     end
@@ -298,7 +303,7 @@ module XMigra
         
         return :missing if b_status.nil? || b_status.include?('D')
         
-        a_status = @object.git_status
+        a_status = @path_statuses[@object.file_path]
         
         if a_status == '??' || a_status[0] == 'A'
           if b_status == '??' || b_status[0] == 'A' || b_status.include?('M')
@@ -352,6 +357,31 @@ module XMigra
       VersionComparator.new(self, options)
     end
     
+    def vcs_latest_revision(a_file=nil)
+      if a_file.nil? && defined? @vcs_latest_revision
+        return @vcs_latest_revision
+      end
+      
+      git(
+        :log,
+        '-n1',
+        '--pretty=format:%H',
+        '--',
+        a_file || file_path,
+        :quiet=>true
+      ).chomp.tap do |val|
+        @vcs_latest_revision = val if a_file.nil?
+      end
+    end
+    
+    def vcs_changes_from(from_commit, file_path)
+      git(:diff, from_commit, '--', file_path)
+    end
+    
+    def vcs_most_recent_committed_contents(file_path)
+      git(:show, "HEAD:#{file_path}", :quiet=>true)
+    end
+    
     def git_status
       @git_status ||= git_retrieve_status(file_path)
     end
@@ -359,7 +389,7 @@ module XMigra
     def git_retrieve_status(a_path)
       return nil unless Pathname(a_path).exist?
       
-      if git('status', '--porcelain', a_path.to_s) =~ /^.+(?= \S)/
+      if git('status', '--porcelain', a_path.to_s) =~ /^.+?(?= \S)/
         $&
       else
         '  '

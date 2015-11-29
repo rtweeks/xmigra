@@ -9,6 +9,7 @@ TESTS = %w[
   git_vcs
   reversions
   new_files
+  structure_declarative
 ]
 
 $:.unshift Pathname(__FILE__).expand_path.dirname.dirname + 'lib'

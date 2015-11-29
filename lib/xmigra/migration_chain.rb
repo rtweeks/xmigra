@@ -17,7 +17,14 @@ module XMigra
       db_specifics = options[:db_specifics]
       vcs_specifics = options[:vcs_specifics]
       
-      head_info = YAML.load_file(File.join(path, HEAD_FILE))
+      head_path = File.join(path, HEAD_FILE)
+      head_info = begin
+        if File.exist?(head_path)
+          YAML.load_file(head_path)
+        else
+          {}
+        end
+      end
       file = head_info[LATEST_CHANGE]
       prev_file = HEAD_FILE
       files_loaded = []
@@ -61,7 +68,7 @@ module XMigra
     
     # Test if the chain reaches back to the empty database
     def complete?
-      length > 0 && self[0].follows.nil?
+      length == 0 || self[0].follows.nil?
     end
     
     # Test if the chain encompasses all migration-like filenames in the path

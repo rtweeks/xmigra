@@ -246,7 +246,7 @@ END_OF_MESSAGE
         
         b_status = @path_status[file_path].elements['entry/wc-status']
         
-        return :missing if b_status.nil? || b_status.attributes['item'] == 'deleted'
+        return :missing if b_status.nil? || ['deleted', 'missing'].include?(b_status.attributes['item'])
         
         a_status = @path_status[@object.file_path].elements['entry/wc-status']
         
@@ -332,6 +332,27 @@ END_OF_MESSAGE
       if match
         subversion(:cat, "-r#{tracer.earliest_loaded_revision}", path.to_s)
       end
+    end
+    
+    def vcs_latest_revision(a_file=nil)
+      if a_file.nil? && defined? @vcs_latest_revision
+        return @vcs_latest_revision
+      end
+      
+      val = subversion(:status, '-v', a_file || file_path).elements[
+        'string(status/target/entry/wc-status/commit/@revision)'
+      ]
+      (val.nil? ? val : val.to_i).tap do |val|
+        @vcs_latest_revision = val if a_file.nil?
+      end
+    end
+    
+    def vcs_changes_from(from_revision, file_path)
+      subversion(:diff, '-r', from_revision, file_path, :raw=>true)
+    end
+    
+    def vcs_most_recent_committed_contents(file_path)
+      subversion(:cat, file_path)
     end
     
     def subversion_retrieve_status(file_path)

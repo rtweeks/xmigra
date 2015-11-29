@@ -300,6 +300,9 @@ module XMigra
       ARGV,
       :error=>proc do |e|
         STDERR.puts("#{e} (#{e.class})") unless e.is_a?(XMigra::Program::QuietError)
+        if e.class.const_defined? :COMMAND_LINE_HELP
+          STDERR.puts(XMigra.program_message(e.class::COMMAND_LINE_HELP))
+        end
         exit(2) if e.is_a?(OptionParser::ParseError)
         exit(2) if e.is_a?(XMigra::Program::ArgumentError)
         exit(1)
@@ -322,6 +325,7 @@ require 'xmigra/function'
 require 'xmigra/plugin'
 
 require 'xmigra/access_artifact_collection'
+require 'xmigra/impdecl_migration_adder'
 require 'xmigra/index'
 require 'xmigra/index_collection'
 require 'xmigra/migration'
