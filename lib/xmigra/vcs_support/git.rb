@@ -258,6 +258,15 @@ module XMigra
       return nil
     end
     
+    def vcs_contents(path, options={})
+      args = []
+      
+      commit = options.fetch(:revision, 'HEAD')
+      args << "#{commit}:#{path}"
+      
+      git(:show, *args)
+    end
+    
     def vcs_prod_chain_extension_handler
       attr_val = GitSpecifics.attr_values(
         PRODUCTION_CHAIN_EXTENSION_COMMAND,

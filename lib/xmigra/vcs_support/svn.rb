@@ -334,6 +334,18 @@ END_OF_MESSAGE
       end
     end
     
+    def vcs_contents(path, options={})
+      args = []
+      
+      if options[:revision]
+        args << "-r#{options[:revision]}"
+      end
+      
+      args << path.to_s
+      
+      subversion(:cat, *args)
+    end
+    
     def vcs_latest_revision(a_file=nil)
       if a_file.nil? && defined? @vcs_latest_revision
         return @vcs_latest_revision

@@ -5,6 +5,39 @@ module XMigra
   class ImpdeclMigrationAdder < NewMigrationAdder
     class NoChangesError < Error; end
     
+    @support_types = {}
+    def self.register_support_type(tag, klass)
+      if @support_types.has_key? tag
+        raise Error, "#{@support_types[tag]} already registered to handle #{tag}"
+      end
+      @support_types[tag] = klass
+    end
+    
+    def self.support_type(tag)
+      @support_types[tag]
+    end
+    
+    module SupportedDatabaseObject
+      module ClassMethods
+        def for_declarative_tagged(tag)
+          XMigra::ImpdeclMigrationAdder.register_support_type(tag, self)
+        end
+      end
+      
+      def self.included(mod)
+        mod.extend(ClassMethods)
+      end
+      
+      # Classes including this Module should define:
+      #     #creation_sql
+      #     #sql_to_effect_from(old_state)
+      #     #destruction_sql
+      #
+      # and expect to receive as arguments to their constructor the name of
+      # the object and the Ruby-ized data present at the top level of the
+      # declarative file.
+    end
+    
     def initialize(path)
       super(path)
       @migrations = MigrationChain.new(
@@ -74,6 +107,12 @@ module XMigra
       end
       
       add_migration_options[:delta] = prev_impl.delta(file_path).extend(LiteralYamlStyle)
+      unless options[:adopt] || options[:renounce]
+        if suggested_sql = build_suggested_sql(decl_stat, file_path, prev_impl)
+          add_migration_options[:sql] = suggested_sql
+          add_migration_options[:sql_suggested] = true
+        end
+      end
       
       add_migration(summary, add_migration_options)
     end
@@ -102,12 +141,79 @@ module XMigra
         provided_sql = data.delete('sql')
         unless [:adoption, :renunciation].include? goal
           data['sql'] = provided_sql
-          data[DeclarativeMigration::QUALIFICATION_KEY] = 'unimplemented'
+          data[DeclarativeMigration::QUALIFICATION_KEY] = begin
+            if options[:sql_suggested]
+              'suggested SQL'
+            else
+              'unimplemented'
+            end
+          end 
         end
         
         # Reorder "description" key to here with 
         data.delete('description')
         data['description'] = "Declarative #{goal} of #{target_object}"
+      end
+    end
+    
+    def build_suggested_sql(decl_stat, file_path, prev_impl)
+      d = SupportedObjectDeserializer(
+        file_path.basename('.yaml')
+      )
+      case decl_stat
+      when :unimplemented
+        initial_state = YAML.parse_file(file_path)
+        initial_state = d.deserialize(initial_state.children[0])
+        
+        if initial_state.kind_of?(SupportedDatabaseObject)
+          initial_state.creation_sql
+        end
+      when :newer
+        old_state = YAML.parse(
+          vcs_contents(file_path, :revision=>prev_impl.vcs_latest_revision),
+          file_path
+        )
+        old_state = d.deserialize(old_state.children[0])
+        new_state = YAML.parse_file(file_path)
+        new_state = d.deserialize(new_state.children[0])
+        
+        if new_state.kind_of?(SupportedDatabaseObject) && old_state.class == new_state.class
+          new_state.sql_to_effect_from old_state
+        end
+      when :missing
+        penultimate_state = YAML.parse(
+          vcs_contents(file_path, :revision=>prev_impl.vcs_latest_revision),
+          file_path
+        )
+        penultimate_state = d.deserialize(penultimate_state.children[0])
+        
+        if penultimate_state.kind_of?(SupportedDatabaseObject)
+          penultimate_state.destruction_sql
+        end
+      end
+    rescue StandardError
+      nil
+    end
+    
+    class SupportedObjectDeserializer
+      def initialize(object_name)
+        @object_name = object_name
+      end
+      
+      attr_reader :object_name
+      
+      def deserialize(yaml_node)
+        data = yaml_node.to_ruby
+        if klass = ImpdeclMigrationAdder.support_type(yaml_node.tag)
+          klass.new(@object_name, data)
+        else
+          if data.respond_to? :name=
+            data.name = @object_name
+          elsif data.kind_of? Hash
+            data['name'] = @object_name
+          end
+          data
+        end
       end
     end
   end
