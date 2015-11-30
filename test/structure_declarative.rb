@@ -1,9 +1,9 @@
 DECLARATIVE_DIR = Pathname('structure/declarative')
 
-def add_foo_declarative
+def add_foo_declarative(object_tag = '!table')
   DECLARATIVE_DIR.mkpath unless DECLARATIVE_DIR.exist?
   (decl_file = DECLARATIVE_DIR.join('foo.yaml')).open('w') do |f|
-    f.print('--- !table
+    f.print("--- #{object_tag}
 columns:
 - name: id
   type: bigint
@@ -11,7 +11,7 @@ columns:
   
 - name: weapon
   type: varchar(32)
-')
+")
   end
   return decl_file
 end
@@ -414,5 +414,98 @@ run_test "XMigra does not allow adoption for deleted declarative" do
         ['impdecl', '--adopt', '--no-edit', decl_file.to_s]
       )
     end
+  end
+end
+
+class ImpdeclSupportMockFactory
+  def initialize
+    @instances = []
+  end
+  
+  attr_reader :instances
+  
+  class Instance
+    include XMigra::ImpdeclMigrationAdder::SupportedDatabaseObject
+    
+    def initialize(name, declared_structure)
+      @name = name
+      @declared_structure = declared_structure
+      
+      @creation_calls = []
+      @revision_calls = []
+      @destruction_calls = []
+    end
+    
+    attr_reader :name, :declared_structure
+    attr_reader :creation_calls, :revision_calls, :destruction_calls
+    
+    def creation_sql(*args)
+      @creation_calls << args
+      method :check_execution_environment_sql
+      return nil
+    end
+    
+    def sql_to_effect_from(*args)
+      @revision_calls << args
+      method :check_execution_environment_sql
+      return nil
+    end
+    
+    def destruction_sql(*args)
+      @destruction_calls << args
+      method :check_execution_environment_sql
+      return nil
+    end
+  end
+  
+  def new(name, declared_structure)
+    Instance.new(name, declared_structure).tap do |instance|
+      @instances << instance
+    end
+  end
+end
+
+def has_dbspecifics(o)
+  XMigra::DatabaseSupportModules.find {|m| o.kind_of? m}
+end
+
+run_test "XMigra uses an associated handler to generate construction SQL" do
+  in_xmigra_schema do
+    do_or_die "git init", "Unable to initialize git repository"
+    test_tag = "!test_tag_value"
+    decl_file = add_foo_declarative(test_tag)
+    
+    support_mock_factory = ImpdeclSupportMockFactory.new
+    XMigra::ImpdeclMigrationAdder.register_support_type(
+      test_tag,
+      support_mock_factory
+    ) do
+      tool = XMigra::ImpdeclMigrationAdder.new('.')
+      tool.strict = true
+      assert {has_dbspecifics(tool)}
+      assert_include(
+        XMigra::DatabaseSupportModules,
+        tool.instance_variable_get(:@db_specifics)
+      )
+      assert {!tool.instance_variable_get(:@db_specifics).nil?}
+      tool.add_migration_implementing_changes(decl_file)
+    end
+    
+    # Check that using XMigra::ImpdeclMigrationAdder#register_support_type with
+    # a block does not polute the support type mapping outside the block
+    assert {XMigra::ImpdeclMigrationAdder.support_type(test_tag).nil?}
+    
+    # support_mock_factory should have created exactly 1 instance
+    assert_eq(support_mock_factory.instances.length, 1)
+    sql_factory = support_mock_factory.instances[0]
+    
+    
+    assert {sql_factory.instance_of? ImpdeclSupportMockFactory::Instance}
+    assert_eq(sql_factory.name, 'foo')
+    assert {sql_factory.declared_structure.kind_of? Hash}
+    assert_eq(sql_factory.creation_calls, [[]])
+    assert_eq(sql_factory.revision_calls, [])
+    assert_eq(sql_factory.destruction_calls, [])
+    assert {has_dbspecifics(sql_factory)}
   end
 end

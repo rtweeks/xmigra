@@ -11,6 +11,13 @@ module XMigra
         raise Error, "#{@support_types[tag]} already registered to handle #{tag}"
       end
       @support_types[tag] = klass
+      if block_given?
+        begin
+          yield
+        ensure
+          @support_types.delete(tag)
+        end
+      end
     end
     
     def self.support_type(tag)
@@ -46,6 +53,8 @@ module XMigra
         :vcs_specifics=>@vcs_specifics,
       )
     end
+    
+    attr_accessor :strict
     
     def add_migration_implementing_changes(file_path, options={})
       file_path = Pathname(file_path)
@@ -143,7 +152,7 @@ module XMigra
           data['sql'] = provided_sql
           data[DeclarativeMigration::QUALIFICATION_KEY] = begin
             if options[:sql_suggested]
-              'suggested SQL'
+              'suggested command sequence'
             else
               'unimplemented'
             end
@@ -157,8 +166,9 @@ module XMigra
     end
     
     def build_suggested_sql(decl_stat, file_path, prev_impl)
-      d = SupportedObjectDeserializer(
-        file_path.basename('.yaml')
+      d = SupportedObjectDeserializer.new(
+        file_path.basename('.yaml').to_s,
+        @db_specifics
       )
       case decl_stat
       when :unimplemented
@@ -192,20 +202,22 @@ module XMigra
         end
       end
     rescue StandardError
+      raise if strict
       nil
     end
     
     class SupportedObjectDeserializer
-      def initialize(object_name)
+      def initialize(object_name, db_specifics)
         @object_name = object_name
+        @db_specifics = db_specifics
       end
       
-      attr_reader :object_name
+      attr_reader :object_name, :db_specifics
       
       def deserialize(yaml_node)
         data = yaml_node.to_ruby
         if klass = ImpdeclMigrationAdder.support_type(yaml_node.tag)
-          klass.new(@object_name, data)
+          klass.new(@object_name, data).extend(@db_specifics)
         else
           if data.respond_to? :name=
             data.name = @object_name
