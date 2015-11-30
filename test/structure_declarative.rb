@@ -509,3 +509,102 @@ run_test "XMigra uses an associated handler to generate construction SQL" do
     assert {has_dbspecifics(sql_factory)}
   end
 end
+
+run_test "XMigra uses an associated handler to generate revision SQL" do
+  in_xmigra_schema do
+    do_or_die "git init", "Unable to initialize git repository"
+    test_tag = "!test_tag_value"
+    decl_file = add_foo_declarative(test_tag)
+    
+    tool = XMigra::ImpdeclMigrationAdder.new('.')
+    new_fpath = tool.add_migration_implementing_changes(decl_file)
+    
+    impdecl_data = YAML.load_file(new_fpath)
+    impdecl_data.delete(XMigra::DeclarativeMigration::QUALIFICATION_KEY)
+    impdecl_data['sql'] = '
+      CREATE TABLE foo (
+        id BIGINT PRIMARY KEY,
+        weapon VARCHAR(64)
+      );
+    '
+    File.open(new_fpath, 'w') do |f|
+      $xmigra_yamler.dump(impdecl_data, f)
+    end
+    
+    do_or_die %Q{git add "#{decl_file}" "#{new_fpath}"}
+    do_or_die %Q{git commit -m "Create foo table"}
+    
+    decl_tree = YAML.parse_stream(decl_file.read)
+    columns_seq = decl_tree.children[0].children[0].children[1]
+    columns_seq.children << YAML.parse(YAML.dump({
+      'name'=>'caliber',
+      'type'=>'float(53)',
+    })).children[0]
+    decl_file.open('w') do |f|
+      f.write(decl_tree.to_yaml)
+    end
+    
+    support_mock_factory = ImpdeclSupportMockFactory.new
+    XMigra::ImpdeclMigrationAdder.register_support_type(
+      test_tag,
+      support_mock_factory
+    ) do
+      tool = XMigra::ImpdeclMigrationAdder.new('.')
+      tool.strict = true
+      tool.add_migration_implementing_changes(decl_file)
+    end
+    
+    assert_eq(support_mock_factory.instances.length, 2)
+    old_state, sql_factory = support_mock_factory.instances
+    [:creation_calls, :revision_calls, :destruction_calls].each do |mname|
+      assert_eq(old_state.send(mname), [])
+    end
+    assert_eq(sql_factory.creation_calls, [])
+    assert_eq(sql_factory.revision_calls, [[old_state]])
+    assert_eq(sql_factory.destruction_calls, [])
+  end
+end
+
+run_test "XMigra uses an associated handler to generate destruction SQL" do
+  in_xmigra_schema do
+    do_or_die "git init", "Unable to initialize git repository"
+    test_tag = "!test_tag_value"
+    decl_file = add_foo_declarative(test_tag)
+    
+    tool = XMigra::ImpdeclMigrationAdder.new('.')
+    new_fpath = tool.add_migration_implementing_changes(decl_file)
+    
+    impdecl_data = YAML.load_file(new_fpath)
+    impdecl_data.delete(XMigra::DeclarativeMigration::QUALIFICATION_KEY)
+    impdecl_data['sql'] = '
+      CREATE TABLE foo (
+        id BIGINT PRIMARY KEY,
+        weapon VARCHAR(64)
+      );
+    '
+    File.open(new_fpath, 'w') do |f|
+      $xmigra_yamler.dump(impdecl_data, f)
+    end
+    
+    do_or_die %Q{git add "#{decl_file}" "#{new_fpath}"}
+    do_or_die %Q{git commit -m "Create foo table"}
+    
+    decl_file.delete
+    
+    support_mock_factory = ImpdeclSupportMockFactory.new
+    XMigra::ImpdeclMigrationAdder.register_support_type(
+      test_tag,
+      support_mock_factory
+    ) do
+      tool = XMigra::ImpdeclMigrationAdder.new('.')
+      tool.strict = true
+      tool.add_migration_implementing_changes(decl_file)
+    end
+    
+    assert_eq(support_mock_factory.instances.length, 1)
+    sql_factory = support_mock_factory.instances[0]
+    assert_eq(sql_factory.creation_calls, [])
+    assert_eq(sql_factory.revision_calls, [])
+    assert_eq(sql_factory.destruction_calls, [[]])
+  end
+end
