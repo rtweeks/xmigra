@@ -187,6 +187,57 @@ run_test "XMigra can create an implementing migration for revision" do
   end
 end
 
+run_test "XMigra detects mismatched implementing migration and declarative" do
+  in_xmigra_schema do
+    do_or_die "git init", "Unable to initialize git repository"
+    decl_file = add_foo_declarative
+    
+    tool = XMigra::ImpdeclMigrationAdder.new('.')
+    new_fpath = tool.add_migration_implementing_changes(decl_file)
+    
+    impdecl_data = YAML.load_file(new_fpath)
+    impdecl_data.delete(XMigra::DeclarativeMigration::QUALIFICATION_KEY)
+    impdecl_data['sql'] = '
+      CREATE TABLE foo (
+        id BIGINT PRIMARY KEY,
+        weapon VARCHAR(64)
+      );
+    '
+    File.open(new_fpath, 'w') do |f|
+      $xmigra_yamler.dump(impdecl_data, f)
+    end
+    
+    do_or_die %Q{git add "#{decl_file}" "#{new_fpath}"}
+    do_or_die %Q{git commit -m "Create foo table"}
+    
+    decl_data = YAML.load_file(decl_file)
+    decl_data['columns'] << {
+      'name'=>'caliber',
+      'type'=>'float(53)',
+    }
+    decl_file.open('w') do |f|
+      $xmigra_yamler.dump(decl_data, f)
+    end
+    
+    tool = XMigra::ImpdeclMigrationAdder.new('.')
+    tool.add_migration_implementing_changes(decl_file)
+    
+    decl_data = YAML.load_file(decl_file)
+    decl_data['columns'] << {
+      'name'=>'dweomer',
+      'type'=>'text',
+    }
+    decl_file.open('w') do |f|
+      $xmigra_yamler.dump(decl_data, f)
+    end
+    
+    tool = XMigra::SchemaUpdater.new('.')
+    assert_raises XMigra::DeclarativeMigration::MissingImplementationError do
+      tool.update_sql
+    end
+  end
+end
+
 run_test "XMigra does not allow adoption for revised declarative" do
   in_xmigra_schema do
     do_or_die "git init", "Unable to initialize git repository"
