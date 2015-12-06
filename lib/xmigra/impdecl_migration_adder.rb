@@ -115,11 +115,16 @@ module XMigra
         raise Program::ArgumentError, "--#{opt} flag is invalid when declarative file is #{decl_stat}"
       end
       
-      add_migration_options[:delta] = prev_impl.delta(file_path).extend(LiteralYamlStyle)
+      # gsub gets rid of trailing whitespace on a line (which would force double-quote syntax)
+      add_migration_options[:delta] = prev_impl.delta(file_path).gsub(/\s+$/, '').extend(LiteralYamlStyle)
       unless options[:adopt] || options[:renounce]
-        if suggested_sql = build_suggested_sql(decl_stat, file_path, prev_impl)
-          add_migration_options[:sql] = suggested_sql
-          add_migration_options[:sql_suggested] = true
+        begin
+          if suggested_sql = build_suggested_sql(decl_stat, file_path, prev_impl)
+            add_migration_options[:sql] = suggested_sql
+            add_migration_options[:sql_suggested] = true
+          end
+        rescue DeclarativeSupport::SpecificationError
+          add_migration_options[:spec_error] = $!.to_s
         end
       end
       
@@ -144,6 +149,9 @@ module XMigra
           end
         end
         data['delta'] = options[:delta]
+        options[:spec_error].tap do |message|
+          data['specification error'] = message if message
+        end
         
         # Reorder "sql" key to here (unless adopting or renouncing, then
         # remove "sql" completely)
@@ -201,6 +209,8 @@ module XMigra
           penultimate_state.destruction_sql
         end
       end
+    rescue DeclarativeSupport::SpecificationError
+      raise
     rescue StandardError
       raise if strict
       nil
@@ -230,3 +240,6 @@ module XMigra
     end
   end
 end
+
+require 'xmigra/declarative_support'
+require 'xmigra/declarative_support/table'
