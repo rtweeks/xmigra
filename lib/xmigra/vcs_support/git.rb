@@ -161,10 +161,14 @@ module XMigra
     end
     
     def git(*args)
-      begin
-        _path = self.path
+      _path = begin
+        self.path
       rescue NameError
-        _path = Pathname(self.file_path).dirname
+        begin
+          self.schema_dir
+        rescue NameError
+          Pathname(self.file_path).dirname
+        end
       end
       Dir.chdir(_path) do |pwd|
         GitSpecifics.run_git(*args)

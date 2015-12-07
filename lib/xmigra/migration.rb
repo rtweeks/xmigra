@@ -23,7 +23,13 @@ module XMigra
     attr_accessor :file_path
     
     def schema_dir
-      Pathname(file_path).dirname.join('..')
+      @schema_dir ||= begin
+        result = Pathname(file_path).dirname
+        while result.basename.to_s != SchemaManipulator::STRUCTURE_SUBDIR
+          result = result.dirname
+        end
+        result.join('..')
+      end
     end
     
     def sql

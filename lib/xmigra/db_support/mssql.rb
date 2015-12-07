@@ -1189,6 +1189,12 @@ END
 END_OF_SQL
     end
     
+    def alter_table_columns_sql_statements(column_name_type_pairs)
+      column_name_type_pairs.map do |col_name, col_type|
+        "ALTER TABLE #{name} ALTER COLUMN #{col_name} #{col_type};"
+      end
+    end
+    
     class << self
       def strip_identifier_quoting(s)
         case

@@ -733,6 +733,12 @@ module XMigra
       })
     end
     
+    def alter_table_columns_sql_statements(column_name_type_pairs)
+      column_name_type_pairs.map do |col_name, col_type|
+        "ALTER TABLE #{name} ALTER COLUMN #{col_name} TYPE #{col_type};"
+      end
+    end
+    
     class <<self
       def in_plpgsql(*args)
         variables = args[0].kind_of?(Hash) ? args.shift : {}
