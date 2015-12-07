@@ -175,6 +175,24 @@ module XMigra
         end
       end
       
+      class CheckConstraint < Constraint
+        IDENTIFIER = 'check'
+        IMPLICIT_PREFIX = 'CK_'
+        
+        def initialize(name, constr_spec)
+          super(name, constr_spec)
+          @expression = constr_spec['verify'] || Constraint.bad_spec(
+            %Q{Check constraint #{name} does not specify an expression to "verify"}
+          )
+        end
+        
+        attr_accessor :expression
+        
+        def creation_sql
+          creation_name_sql + "CHECK (#{expression})"
+        end
+      end
+      
       def initialize(name, structure)
         @name = name
         @columns_by_name = (structure['columns'] || raise(
