@@ -83,10 +83,7 @@ module XMigra
       class ColumnListConstraint < Constraint
         def initialize(name, constr_spec)
           super(name, constr_spec)
-          @columns = constr_spec['columns'] || Constraint.bad_spec(
-            %Q{#{self.class::IDENTIFIER} constraint #{@name} must specify columns}
-          )
-          validate_columns
+          @columns = get_and_validate_columns(constr_spec)
         end
         
         attr_reader :columns
@@ -96,16 +93,20 @@ module XMigra
         end
         
         protected
-        def validate_columns
-          unless columns.kind_of? Array
-            Constraint.bad_spec(
-              %Q{#{self.class::IDENTIFIER} constraint #{@name} expected "columns" to be a sequence (Array)}
-            )
-          end
-          if columns.uniq.length < columns.length
-            Constraint.bad_spec(
-              %Q{#{self.class::IDENTIFIER} constraint #{@name} has one or more duplicate columns}
-            )
+        def get_and_validate_columns(constr_spec)
+          (constr_spec.array_fetch('columns', ->(c) {c['name']}) || Constraint.bad_spec(
+            %Q{#{self.class::IDENTIFIER} constraint #{name} must specify columns}
+          )).tap do |cols|
+            unless cols.kind_of? Array
+              Constraint.bad_spec(
+                %Q{#{self.class::IDENTIFIER} constraint #{@name} expected "columns" to be a sequence (Array)}
+              )
+            end
+            if cols.uniq.length < cols.length
+              Constraint.bad_spec(
+                %Q{#{self.class::IDENTIFIER} constraint #{@name} has one or more duplicate columns}
+              )
+            end
           end
         end
       end
@@ -166,11 +167,15 @@ module XMigra
         end
         
         protected
-        def validate_columns
-          unless columns.kind_of? Hash
-            Constraint.bad_spec(
-              %Q{Foreign key constraint #{@name} expected "columns" to be a mapping (Hash) referrer -> referent}
-            )
+        def get_and_validate_columns(constr_spec)
+          (constr_spec.raw_item('columns') || Constraint.bad_spec(
+            %Q{#{self.class::IDENTIFIER} constraint #{name} must specify columns}
+          )).tap do |cols|
+            unless cols.kind_of? Hash
+              Constraint.bad_spec(
+                %Q{Foreign key constraint #{@name} expected "columns" to be a mapping (Hash) referrer -> referent}
+              )
+            end
           end
         end
       end
@@ -194,8 +199,9 @@ module XMigra
       end
       
       def initialize(name, structure)
+        structure = StructureReader.new(structure)
         @name = name
-        @columns_by_name = (structure['columns'] || raise(
+        @columns_by_name = (structure.array_fetch('columns', ->(c) {c['name']}) || raise(
           SpecificationError,
           "No columns specified for table #{@name}"
         )).inject({}) do |result, item|
@@ -230,13 +236,23 @@ module XMigra
           end
         end
         
+        structure.each_unused_standard_key do |k|
+          errors << "Unrecognized standard key #{k.join('.')}"
+        end
+        
         unless errors.empty?
           raise SpecificationError, errors.join("\n")
+        end
+        
+        @extensions = structure.each_extension.inject({}) do |result, kv_pair|
+          key, value = kv_pair
+          result[key] = value
+          result
         end
       end
       
       attr_accessor :name
-      attr_reader :constraints
+      attr_reader :constraints, :extensions
       
       def columns
         @columns_by_name.values
@@ -318,6 +334,17 @@ module XMigra
         parts.concat add_table_constraints_sql_statements(
           new_constraint_sql_clauses
         ).to_a
+        
+        (extensions.keys + old_state.extensions.keys).uniq.sort.each do |ext_key|
+          case 
+          when extensions.has_key?(ext_key) && !old_state.extensions.has_key?(ext_key)
+            parts << "-- TODO: New extension #{ext_key}"
+          when old_state.extensions.has_key?(ext_key) && !extensions.has_key?(ext_key)
+            parts << "-- TODO: Extension #{ext_key} removed"
+          else
+            parts << "-- TODO: Modification to extension #{ext_key}"
+          end
+        end
         
         return parts.join("\n")
       end
