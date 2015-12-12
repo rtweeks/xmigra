@@ -44,6 +44,9 @@ def run_test(name, &block)
   
   if child_pid = Process.fork
     msg_sender.close
+    
+    # Must read to EOF or child may hang if pipe is filled
+    test_message = msg_receiver.read
     Process.wait(child_pid)
     
     if $?.success?
@@ -54,7 +57,7 @@ def run_test(name, &block)
       $tests_failed << name
     end
     
-    if (test_message = msg_receiver.read).length > 0
+    if test_message.length > 0
       ($test_messages ||= {})[name] = test_message
     end
     msg_receiver.close
