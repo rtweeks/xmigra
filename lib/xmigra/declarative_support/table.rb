@@ -6,6 +6,48 @@ module XMigra
       include ImpdeclMigrationAdder::SupportedDatabaseObject
       for_declarative_tagged "!table"
       
+      def self.decldoc
+        <<END_OF_HELP
+The "!table" tag declares a table within the database using two standard top-
+level keys: a required "columns" key and an optional "constraints" key.
+
+The value of the "columns" key is a sequence of mappings, each giving "name"
+and "type".  The value of the "type" key should be a type according to the
+database system in use (e.g. MS SQL Server considers nullability to be part of
+the type information, where PostgreSQL uses a special kind of column
+constraint).  The key "primary key", whose value is interpreted as a Boolean,
+can be used to indicate a primary key without using the more explicit
+"constraints" syntax.
+
+The value of the "constraints" key is a mapping from constraint name to
+constraint definition (itself a mapping).  The constraint type can either be
+explicit through use of the "type" key in the constraint definition or
+implicit through a prefix used to start the constraint name (and no explicit
+constraint type).  The available constraint types are:
+
+    Explicit type   Implicit prefix
+    -------------   ---------------
+    primary key     PK_
+    unique          UQ_
+    foreign key     FK_
+    check           CK_
+
+Primary key and unique constraint definitions must have a "columns" key that
+is a sequence of column names.  For foreign key constraint definitions, the
+value of the "columns" key must be a mapping of referring column name to
+referenced column name.  Check constraint definitions must have a "verify" key
+whose value is an SQL expression to be checked for all records.  Only one
+primary key constraint may be specified, whether through use of "primary key"
+keys in column mappings or explicitly in the "constraints" section.
+
+Extended information may be added to any standard-structure mapping in the
+declarative document by using any string key beginning with "X-" (the LATIN
+CAPITAL LETTER X followed by a HYPHEN-MINUS).  All other keys are reserved for
+future expansion and may cause an error when generating implementing SQL.
+END_OF_HELP
+#'
+      end
+      
       class Column
         SPEC_ATTRS = [:name, :type]
         

@@ -24,6 +24,10 @@ module XMigra
       @support_types[tag]
     end
     
+    def self.each_support_type(&blk)
+      @support_types.each_pair(&blk)
+    end
+    
     module SupportedDatabaseObject
       module ClassMethods
         def for_declarative_tagged(tag)

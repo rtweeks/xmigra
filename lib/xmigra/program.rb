@@ -79,6 +79,7 @@ module XMigra
             puts(" " * indent + line.chomp)
           end
         end
+        puts
       end
       
       def show_subcommands_as_help(_1=nil)
@@ -841,6 +842,46 @@ END_OF_HELP
         end
       end
       edit(new_fpath) if options.edit
+    end
+    
+    subcommand 'decldoc', "Get help on supported structure/declarative syntax" do |argv|
+      args, options = command_line(argv, {},
+                                   :argument_desc=>"[TAG]",
+                                   :help=> <<END_OF_HELP)
+Use this command to list supported top level tags in structure/declarative YAML
+files or, by giving a TAG, to get the supported data schema for one of the
+tags.
+END_OF_HELP
+      argument_error_unless((0..1).include?(args.length),
+                            "'%prog $cmd' takes zero arguments or one argument.")
+      tag = args[0]
+      if tag.nil?
+        # Print a list of available tags
+        puts
+        puts "Supported structure/declarative tags:"
+        puts
+        ImpdeclMigrationAdder.each_support_type do |tag, klass|
+          next unless klass.respond_to?(:decldoc)
+          puts "    #{tag}"
+        end
+        puts
+      else
+        # Try to get the class associated with the tag and see if it provides
+        # documentation
+        impl_class = ImpdeclMigrationAdder.support_type(tag)
+        argument_error_unless(
+          !impl_class.nil?,
+          "#{tag} is not a supported tag for structure/declarative"
+        )
+        docmethod = begin
+          impl_class.method :decldoc
+        rescue
+          raise ArgumentError, "#{tag} is supported but undocumented"
+        end
+        puts
+        puts docmethod.call
+        puts
+      end
     end
     
     subcommand 'impdecl', "Implement an outstanding structure/declarative change" do |argv|
