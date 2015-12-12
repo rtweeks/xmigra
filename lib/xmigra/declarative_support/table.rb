@@ -17,6 +17,9 @@ database system in use.  The "nullable" key (with a default value of true) can
 map to false to indicate that the column should not accept null values.  The
 key "primary key", whose value is interpreted as a Boolean, can be used to
 indicate a primary key without using the more explicit "constraints" syntax.
+Including a "default" key indicates a default constraint on the column, where
+the value of the key is an expression to use for computing the default value
+(which may be constrained by the database system in use).
 
 The value of the "constraints" key is a mapping from constraint name to
 constraint definition (itself a mapping).  The constraint type can either be
@@ -30,14 +33,21 @@ constraint type).  The available constraint types are:
     unique          UQ_
     foreign key     FK_
     check           CK_
+    default         DF_
 
 Primary key and unique constraint definitions must have a "columns" key that
-is a sequence of column names.  For foreign key constraint definitions, the
-value of the "columns" key must be a mapping of referring column name to
-referenced column name.  Check constraint definitions must have a "verify" key
-whose value is an SQL expression to be checked for all records.  Only one
-primary key constraint may be specified, whether through use of "primary key"
-keys in column mappings or explicitly in the "constraints" section.
+is a sequence of column names.  Only one primary key constraint may be
+specified, whether through use of "primary key" keys in column mappings or
+explicitly in the "constraints" section.  For foreign key constraint
+definitions, the value of the "columns" key must be a mapping of referring
+column name to referenced column name.  Check constraint definitions must have
+a "verify" key whose value is an SQL expression to be checked for all records.
+Default constraints (when given explicitly) must have a "value" key giving
+the expression (with possible limitations imposed by the database system in
+use) for the default value and an indication of the constrained column: either
+a "column" key giving explicit reference to a column or, if the constraint
+name starts with the implicit prefix, the part of the constraint name after
+the prefix.
 
 Extended information may be added to any standard-structure mapping in the
 declarative document by using any string key beginning with "X-" (the LATIN
@@ -56,9 +66,19 @@ END_OF_HELP
           SPEC_ATTRS.each do |a|
             instance_variable_set("@#{a}".to_sym, col_spec[a.to_s])
           end
+          if default = col_spec['default']
+            @default_constraint = DefaultConstraint.new(
+              "DF_#{name}",
+              StructureReader.new({
+                'column'=>name,
+                'value'=>default
+              })
+            )
+          end
         end
         
         attr_accessor *SPEC_ATTRS
+        attr_accessor :default_constraint
         
         def primary_key?
           @primary_key
@@ -121,6 +141,10 @@ END_OF_HELP
         end
         
         attr_accessor :name
+        
+        def only_on_column_at_creation?
+          false
+        end
         
         protected
         def creation_name_sql
@@ -247,26 +271,77 @@ END_OF_HELP
         end
       end
       
+      class DefaultConstraint < Constraint
+        IDENTIFIER = 'default'
+        IMPLICIT_PREFIX = 'DF_'
+        
+        def initialize(name, constr_spec)
+          super(name, constr_spec)
+          implicit_column = (
+            name[IMPLICIT_PREFIX.length..-1] if name.start_with?(IMPLICIT_PREFIX)
+          )
+          @column = constr_spec['column'] || implicit_column || Constraint.bad_spec(
+            %Q{Default constraint #{name} does not specify a "column"}
+          )
+          @expression = constr_spec['value'] || Constraint.bad_spec(
+            %Q{Default constraint #{name} does not specify an expression to use as a "value"}
+          )
+        end
+        
+        attr_accessor :column, :expression
+        
+        def only_on_column_at_creation?
+          true
+        end
+        
+        def creation_sql
+          creation_name_sql + "DEFAULT #{expression} FOR #{column}"
+        end
+      end
+      
       def initialize(name, structure)
         structure = StructureReader.new(structure)
         @name = name
+        constraints = {}
         @columns_by_name = (structure.array_fetch('columns', ->(c) {c['name']}) || raise(
           SpecificationError,
           "No columns specified for table #{@name}"
         )).inject({}) do |result, item|
           column = Column.new(item)
           result[column.name] = column
+          
+          if !(col_default = column.default_constraint).nil?
+            constraints[col_default.name] = col_default
+          end
+          
           result
         end
-        constraints = {}
         @primary_key = columns.select(&:primary_key?).tap do |cols|
           break nil if cols.empty?
-          pk = PrimaryKey.new("PK_#{name.gsub('.', '_')}", {'columns'=>cols})
+          pk = PrimaryKey.new(
+            "PK_#{name.gsub('.', '_')}", 
+            StructureReader.new({'columns'=>cols})
+          )
           break (constraints[pk.name] = pk)
         end
         @constraints = (structure['constraints'] || []).inject(constraints) do |result, name_spec_pair|
           constraint = Constraint.deserialize(*name_spec_pair)
+          
+          if result.has_key?(constraint.name)
+            raise SpecificationError, "Constraint #{constraint.name} is specified multiple times"
+          end
+          
           result[constraint.name] = constraint
+          
+          # Link DefaultConstraints to their respective Columns
+          # because the constraint object is needed for column creation
+          if constraint.kind_of? DefaultConstraint
+            unless (col = get_column(constraint.column)).default_constraint.nil?
+              raise SpecificationError, "Default constraint #{constraint.name} attempts to constrain #{constraint.column} which already has a default constraint"
+            end
+            col.default_constraint = constraint
+          end
+          
           result
         end
         errors = []
@@ -277,11 +352,13 @@ END_OF_HELP
             end
             @primary_key = constraint
           end
-          unknown_cols = constraint.constrained_colnames.reject do |colname|
-            has_column?(colname)
-          end
-          unless unknown_cols.empty?
-            errors << "#{constraint.class::IDENTIFIER} constraint #{constraint.name} references unknown column(s): #{unknown_cols.join(', ')}"
+          if constraint.kind_of? ColumnListConstraint
+            unknown_cols = constraint.constrained_colnames.reject do |colname|
+              has_column?(colname)
+            end
+            unless unknown_cols.empty?
+              errors << "#{constraint.class::IDENTIFIER} constraint #{constraint.name} references unknown column(s): #{unknown_cols.join(', ')}"
+            end
           end
         end
         
@@ -318,7 +395,10 @@ END_OF_HELP
       def creation_sql
         table_items = []
         table_items.concat(columns.map {|col| column_creation_sql_fragment(col)})
-        table_items.concat(constraints.values.map(&:creation_sql))
+        table_items.concat(constraints.values
+          .reject(&:only_on_column_at_creation?)
+          .map(&:creation_sql)
+        )
         
         "CREATE TABLE #{name} (\n" + \
         table_items.map {|item| "  #{item}"}.join(",\n") + "\n" + \
@@ -344,7 +424,6 @@ END_OF_HELP
             if old_constraint_sql[constr.name] != (crt_sql = constr.creation_sql)
               constraints_to_drop << constr.name
               new_constraint_sql_clauses << crt_sql
-              parts << "ALTER TABLE #{name} ADD #{crt_sql};"
             end
           else
             new_constraint_sql_clauses << constr.creation_sql
@@ -398,6 +477,9 @@ END_OF_HELP
       
       def column_creation_sql_fragment(column)
         "#{column.name} #{column.type}".tap do |result|
+          if dc = column.default_constraint
+            result << " CONSTRAINT #{dc.name} DEFAULT #{dc.expression}"
+          end
           result << " NOT NULL" unless column.nullable?
         end
       end
