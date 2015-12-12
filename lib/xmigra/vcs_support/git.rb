@@ -7,6 +7,7 @@ module XMigra
     MASTER_HEAD_ATTRIBUTE = 'xmigra-master'
     MASTER_BRANCH_SUBDIR = 'xmigra-master'
     PRODUCTION_CHAIN_EXTENSION_COMMAND = 'xmigra-on-production-chain-extended'
+    ATTRIBUTE_UNSPECIFIED = 'unspecified'
     
     class AttributesFile
       def initialize(effect_root, access=:shared)
@@ -211,7 +212,13 @@ module XMigra
     end
     
     def branch_identifier
-      return (if self.production
+      for_production = begin
+        self.production
+      rescue NameError
+        false
+      end
+      
+      return (if for_production
         self.git_branch_info[0]
       else
         return @git_branch_identifier if defined? @git_branch_identifier
@@ -333,7 +340,7 @@ module XMigra
         :required=>options[:required]
       )
       return nil if master_head.nil?
-      return @git_master_head = master_head
+      return @git_master_head = (master_head if master_head != GitSpecifics::ATTRIBUTE_UNSPECIFIED)
     end
     
     def git_branch
