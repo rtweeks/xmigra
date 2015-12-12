@@ -733,9 +733,19 @@ module XMigra
       })
     end
     
-    def alter_table_columns_sql_statements(column_name_type_pairs)
-      column_name_type_pairs.map do |col_name, col_type|
-        "ALTER TABLE #{name} ALTER COLUMN #{col_name} TYPE #{col_type};"
+    def alter_table_columns_sql_statements(col_pairs)
+      col_pairs.flat_map do |old_col, col|
+        [].tap do |parts|
+          if !old_col.nullable? && col.nullable?
+            parts << "ALTER TABLE #{name} ALTER COLUMN #{col.name} DROP NOT NULL;"
+          end
+          if old_col.type != col.type
+            parts << "ALTER TABLE #{name} ALTER COLUMN #{col.name} TYPE #{col.type};"
+          end
+          if old_col.nullable? && !col.nullable?
+            parts << "ALTER TABLE #{name} ALTER COLUMN #{col.name} SET NOT NULL;"
+          end
+        end
       end
     end
     

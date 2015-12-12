@@ -13,11 +13,10 @@ level keys: a required "columns" key and an optional "constraints" key.
 
 The value of the "columns" key is a sequence of mappings, each giving "name"
 and "type".  The value of the "type" key should be a type according to the
-database system in use (e.g. MS SQL Server considers nullability to be part of
-the type information, where PostgreSQL uses a special kind of column
-constraint).  The key "primary key", whose value is interpreted as a Boolean,
-can be used to indicate a primary key without using the more explicit
-"constraints" syntax.
+database system in use.  The "nullable" key (with a default value of true) can
+map to false to indicate that the column should not accept null values.  The
+key "primary key", whose value is interpreted as a Boolean, can be used to
+indicate a primary key without using the more explicit "constraints" syntax.
 
 The value of the "constraints" key is a mapping from constraint name to
 constraint definition (itself a mapping).  The constraint type can either be
@@ -53,6 +52,7 @@ END_OF_HELP
         
         def initialize(col_spec)
           @primary_key = !!col_spec['primary key']
+          @nullable = !!col_spec.fetch('nullable', true)
           SPEC_ATTRS.each do |a|
             instance_variable_set("@#{a}".to_sym, col_spec[a.to_s])
           end
@@ -63,8 +63,15 @@ END_OF_HELP
         def primary_key?
           @primary_key
         end
-        def primary_key=
-          @primary_key
+        def primary_key=(value)
+          @primary_key = value
+        end
+        
+        def nullable?
+          @nullable
+        end
+        def nullable=(value)
+          @nullable = value
         end
       end
       
@@ -310,7 +317,7 @@ END_OF_HELP
       
       def creation_sql
         table_items = []
-        table_items.concat(columns.map {|col| "#{col.name} #{col.type}"})
+        table_items.concat(columns.map {|col| column_creation_sql_fragment(col)})
         table_items.concat(constraints.values.map(&:creation_sql))
         
         "CREATE TABLE #{name} (\n" + \
@@ -349,12 +356,12 @@ END_OF_HELP
         
         # Look for new and altered columns
         new_columns = []
-        altered_columns = []
+        altered_column_pairs = []
         columns.each do |col|
           if !old_state.has_column? col.name
             new_columns << col
-          elsif old_state.get_column(col.name).type != col.type
-            altered_columns << col
+          elsif column_creation_differs?(old_col = old_state.get_column(col.name), col)
+            altered_column_pairs << [old_col, col]
           end
         end
         parts.concat add_table_columns_sql_statements(
@@ -362,9 +369,7 @@ END_OF_HELP
         ).to_a
         
         # Look for altered columns
-        parts.concat alter_table_columns_sql_statements(
-          altered_columns.lazy.map {|col| [col.name, col.type]}
-        ).to_a
+        parts.concat alter_table_columns_sql_statements(altered_column_pairs).to_a
         
         # Look for removed columns
         removed_columns = old_state.columns.reject {|col| has_column? col.name}
@@ -389,6 +394,16 @@ END_OF_HELP
         end
         
         return parts.join("\n")
+      end
+      
+      def column_creation_sql_fragment(column)
+        "#{column.name} #{column.type}".tap do |result|
+          result << " NOT NULL" unless column.nullable?
+        end
+      end
+      
+      def column_creation_differs?(a, b)
+        [a, b].map {|c| column_creation_sql_fragment(c)}.inject(&:!=)
       end
       
       def remove_table_constraints_sql_statements(constraint_names)
