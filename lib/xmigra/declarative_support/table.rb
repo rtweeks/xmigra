@@ -223,7 +223,7 @@ module XMigra
         errors = []
         @constraints.each_value do |constraint|
           if constraint.kind_of? PrimaryKey
-            if @primary_key && (!@primary_key.name.nil? || @primary_key.columns != constraint.columns)
+            unless @primary_key.nil?
               raise SpecificationError, "Multiple primary keys specified"
             end
             @primary_key = constraint
