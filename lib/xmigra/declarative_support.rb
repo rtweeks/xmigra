@@ -28,6 +28,20 @@ module XMigra
         return result
       end
       
+      def fetch(key, *args)
+        if args.length > 1
+          raise ArgumentError, "fetch takes 1 or 2 arguments"
+        end
+        
+        if @data.has_key?(key)
+          return self[key]
+        elsif args.length == 1
+          return args[0]
+        else
+          raise KeyError, "#{key.inspect} not present"
+        end
+      end
+      
       def array_fetch(key, key_finder_proc)
         result, result_key = item_and_keypath(key)
         unless result.kind_of? Array
