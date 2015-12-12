@@ -215,7 +215,7 @@ module XMigra
           pk = PrimaryKey.new("PK_#{name.gsub('.', '_')}", {'columns'=>cols})
           break (constraints[pk.name] = pk)
         end
-        @constraints = structure['constraints'].inject(constraints) do |result, name_spec_pair|
+        @constraints = (structure['constraints'] || []).inject(constraints) do |result, name_spec_pair|
           constraint = Constraint.deserialize(*name_spec_pair)
           result[constraint.name] = constraint
           result
