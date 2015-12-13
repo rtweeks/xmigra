@@ -49,6 +49,18 @@ a "column" key giving explicit reference to a column or, if the constraint
 name starts with the implicit prefix, the part of the constraint name after
 the prefix.
 
+When specifying SQL expressions in YAML, make sure to use appropriate quoting.
+For example, where apostrophes delimit string literals in SQL and it might be
+tempting to write a default expression with only one set of apostrophes around
+it, YAML also uses apostrophes (or "single quotes") to mark a scalar value
+(a string unless otherwise tagged), and so the apostrophes are consumed when
+the YAML is parsed.  Either use a triple-apostrophe (YAML consumes the first,
+converts the pair of second and third into a single apostrophe, and does the
+reverse sequence at the end of the scalar) or use a block scalar (literal or
+folded), preferably chopped (i.e. "|-" or ">-").  The rule is: whatever YAML
+parsing sees as the value of the scalar, that is the SQL expression to be
+used.
+
 Extended information may be added to any standard-structure mapping in the
 declarative document by using any string key beginning with "X-" (the LATIN
 CAPITAL LETTER X followed by a HYPHEN-MINUS).  All other keys are reserved for
