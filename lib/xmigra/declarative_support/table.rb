@@ -320,7 +320,7 @@ END_OF_HELP
           break nil if cols.empty?
           pk = PrimaryKey.new(
             "PK_#{name.gsub('.', '_')}", 
-            StructureReader.new({'columns'=>cols})
+            StructureReader.new({'columns'=>cols.map(&:name)})
           )
           break (constraints[pk.name] = pk)
         end
@@ -347,7 +347,7 @@ END_OF_HELP
         errors = []
         @constraints.each_value do |constraint|
           if constraint.kind_of? PrimaryKey
-            unless @primary_key.nil?
+            unless @primary_key.nil? || constraint.equal?(@primary_key)
               raise SpecificationError, "Multiple primary keys specified"
             end
             @primary_key = constraint
@@ -392,73 +392,67 @@ END_OF_HELP
         @columns_by_name.has_key? name
       end
       
-      def creation_sql
-        table_items = []
-        table_items.concat(columns.map {|col| column_creation_sql_fragment(col)})
-        table_items.concat(constraints.values
-          .reject(&:only_on_column_at_creation?)
-          .map(&:creation_sql)
+      def add_default(colname, expression, constr_name=nil)
+        col = get_column(colname)
+        unless col.default_constraint.nil?
+          raise "#{colname} already has a default constraint"
+        end
+        constr_name ||= "DF_#{colname}"
+        if constraints[constr_name]
+          raise "Constraint #{constr_name} already exists"
+        end
+        constraints[constr_name] = col.default_constraint = DefaultConstraint.new(
+          constr_name,
+          StructureReader.new({
+            'column'=>colname,
+            'value'=>expression,
+          })
         )
-        
+      end
+      
+      def creation_sql
         "CREATE TABLE #{name} (\n" + \
-        table_items.map {|item| "  #{item}"}.join(",\n") + "\n" + \
+        table_creation_items.map {|item| "  #{item.creation_sql}"}.join(",\n") + "\n" + \
         ");"
       end
       
+      def table_creation_items
+        table_items = []
+        table_items.concat(columns
+          .map {|col| ColumnCreationFragment.new(self, col)}
+        )
+        table_items.concat(constraints.values
+          .reject(&:only_on_column_at_creation?)
+        )
+      end
+      
       def sql_to_effect_from(old_state)
+        delta = Delta.new(old_state, self)
         parts = []
         
-        # Look for changes to any constraint (adding constraints waits until columns added)
-        constraints_to_drop = []
-        new_constraint_sql_clauses = []
-        old_constraint_sql = old_state.constraints.each_value.inject({}) do |result, constr|
-          if constraints.has_key? constr.name
-            result[constr.name] = constr.creation_sql
-          else
-            constraints_to_drop << constr.name
-          end
-          result
-        end
-        constraints.each_value do |constr|
-          if old_constraint_sql.has_key? constr.name
-            if old_constraint_sql[constr.name] != (crt_sql = constr.creation_sql)
-              constraints_to_drop << constr.name
-              new_constraint_sql_clauses << crt_sql
-            end
-          else
-            new_constraint_sql_clauses << constr.creation_sql
-          end
-        end
+        # Remove constraints
         parts.concat remove_table_constraints_sql_statements(
-          constraints_to_drop
+          delta.constraints_to_drop
         )
         
-        # Look for new and altered columns
-        new_columns = []
-        altered_column_pairs = []
-        columns.each do |col|
-          if !old_state.has_column? col.name
-            new_columns << col
-          elsif column_creation_differs?(old_col = old_state.get_column(col.name), col)
-            altered_column_pairs << [old_col, col]
-          end
-        end
+        # Add new columns
         parts.concat add_table_columns_sql_statements(
-          new_columns.lazy.map {|col| [col.name, col.type]}
+          delta.new_columns.lazy.map {|col| [col.name, col.type]}
         ).to_a
         
-        # Look for altered columns
-        parts.concat alter_table_columns_sql_statements(altered_column_pairs).to_a
+        # Alter existing columns
+        parts.concat alter_table_columns_sql_statements(
+          delta.altered_column_pairs
+        ).to_a
         
-        # Look for removed columns
-        removed_columns = old_state.columns.reject {|col| has_column? col.name}
+        # Remove columns
         parts.concat remove_table_columns_sql_statements(
-          removed_columns.lazy.map(&:name)
+          delta.removed_columns.lazy.map(&:name)
         ).to_a
         
-        # After new columns are added, add constraints
+        # Add constraints
         parts.concat add_table_constraints_sql_statements(
-          new_constraint_sql_clauses
+          delta.new_constraint_sql_clauses
         ).to_a
         
         (extensions.keys + old_state.extensions.keys).uniq.sort.each do |ext_key|
@@ -475,6 +469,66 @@ END_OF_HELP
         return parts.join("\n")
       end
       
+      class ColumnCreationFragment
+        def initialize(table, column)
+          @table = table
+          @column = column
+        end
+        
+        attr_reader :column
+        
+        def creation_sql
+          @table.column_creation_sql_fragment(@column)
+        end
+      end
+      
+      class Delta
+        def initialize(old_state, new_state)
+          @constraints_to_drop = []
+          @new_constraint_sql_clauses = []
+          
+          # Look for constraints from old_state that are removed and gather
+          # constraint creation SQL
+          old_constraint_sql = old_state.constraints.each_value.inject({}) do |result, constr|
+            if new_state.constraints.has_key? constr.name
+              result[constr.name] = constr.creation_sql
+            else
+              @constraints_to_drop << constr.name
+            end
+            
+            result
+          end
+          
+          # Look for constraints that are new to or altered in new_state
+          new_state.constraints.each_value do |constr|
+            if old_constraint_sql.has_key? constr.name
+              if old_constraint_sql[constr.name] != (crt_sql = constr.creation_sql)
+                @constraints_to_drop << constr.name
+                @new_constraint_sql_clauses << crt_sql
+              end
+            else
+              new_constraint_sql_clauses << constr.creation_sql
+            end
+          end
+          
+          # Look for new and altered columns
+          @new_columns = []
+          @altered_column_pairs = []
+          new_state.columns.each do |col|
+            if !old_state.has_column? col.name
+              @new_columns << col
+            elsif new_state.column_alteration_occurs?(old_col = old_state.get_column(col.name), col)
+              @altered_column_pairs << [old_col, col]
+            end
+          end
+          
+          # Look for removed columns
+          @removed_columns = old_state.columns.reject {|col| new_state.has_column? col.name}
+        end
+        
+        attr_reader :constraints_to_drop, :new_constraint_sql_clauses, :new_columns, :altered_column_pairs, :removed_columns
+      end
+      
       def column_creation_sql_fragment(column)
         "#{column.name} #{column.type}".tap do |result|
           if dc = column.default_constraint
@@ -484,8 +538,8 @@ END_OF_HELP
         end
       end
       
-      def column_creation_differs?(a, b)
-        [a, b].map {|c| column_creation_sql_fragment(c)}.inject(&:!=)
+      def column_alteration_occurs?(a, b)
+        [[a, b], [b, a]].map {|pair| alter_table_columns_sql_statements([pair])}.inject(&:!=)
       end
       
       def remove_table_constraints_sql_statements(constraint_names)

@@ -1,6 +1,6 @@
 DECLARATIVE_DIR = Pathname('structure/declarative')
 
-def add_foo_declarative(object_tag = '!table')
+def add_foo_declarative(object_tag = '!table', options={})
   DECLARATIVE_DIR.mkpath unless DECLARATIVE_DIR.exist?
   (decl_file = DECLARATIVE_DIR.join('foo.yaml')).open('w') do |f|
     f.print("--- #{object_tag}
@@ -8,9 +8,11 @@ columns:
 - name: id
   type: bigint
   primary key: true
+  #{options[:id_extra_info].to_s.lines.join("\n  ")}
   
 - name: weapon
   type: varchar(32)
+  #{options[:weapon_extra_info].to_s.lines.join("\n  ")}
 ")
   end
   return decl_file
@@ -657,5 +659,143 @@ run_test "XMigra uses an associated handler to generate destruction SQL" do
     assert_eq(sql_factory.creation_calls, [])
     assert_eq(sql_factory.revision_calls, [])
     assert_eq(sql_factory.destruction_calls, [[]])
+  end
+end
+
+run_test "DeclarativeSupport::Table can create tables with \"NOT NULL\" columns" do
+  in_xmigra_schema do
+    do_or_die "git init", "Unable to initialize git repository"
+    decl_file = add_foo_declarative("!table")
+    
+    deserializer = XMigra::ImpdeclMigrationAdder::SupportedObjectDeserializer.new(decl_file.basename('.yaml').to_s, XMigra::NoSpecifics)
+    table_yaml = YAML.parse_file(decl_file)
+    table = deserializer.deserialize(table_yaml.children[0])
+    table.get_column('weapon').nullable = false
+    
+    assert('weapon column did not have "NOT NULL"') do
+      table.table_creation_items.any? do |i|
+        next unless i.kind_of?(XMigra::DeclarativeSupport::Table::ColumnCreationFragment)
+        next unless i.column.name == 'weapon'
+        next unless i.creation_sql =~ /NOT\s+NULL/
+        true
+      end
+    end
+  end
+end
+
+run_test "DeclarativeSupport::Table can add or remove \"NOT NULL\" from columns" do
+  in_xmigra_schema do
+    do_or_die "git init", "Unable to initialize git repository"
+    decl_file = add_foo_declarative
+    
+    deserializer = XMigra::ImpdeclMigrationAdder::SupportedObjectDeserializer.new(decl_file.basename('.yaml').to_s, XMigra::PgSQLSpecifics)
+    table_yaml = YAML.parse_file(decl_file)
+    table_null = deserializer.deserialize(table_yaml.children[0])
+    table_notnull = deserializer.deserialize(table_yaml.children[0])
+    table_notnull.get_column('weapon').nullable = false
+    
+    delta = XMigra::DeclarativeSupport::Table::Delta.new(table_null, table_notnull)
+    assert_eq(delta.constraints_to_drop, [])
+    assert_eq(delta.new_columns, [])
+    assert_eq(delta.removed_columns, [])
+    assert_eq(delta.new_constraint_sql_clauses, [])
+    assert_eq(delta.altered_column_pairs.length, 1)
+    stmts = table_notnull.alter_table_columns_sql_statements(delta.altered_column_pairs)
+    assert_eq(stmts.length, 1)
+    assert_eq(stmts[0].gsub(/\s+/, ' ').upcase, "ALTER TABLE FOO ALTER COLUMN WEAPON SET NOT NULL;")
+    
+    delta = XMigra::DeclarativeSupport::Table::Delta.new(table_notnull, table_null)
+    assert_eq(delta.constraints_to_drop, [])
+    assert_eq(delta.new_columns, [])
+    assert_eq(delta.removed_columns, [])
+    assert_eq(delta.new_constraint_sql_clauses, [])
+    assert_eq(delta.altered_column_pairs.length, 1)
+    stmts = table_null.alter_table_columns_sql_statements(delta.altered_column_pairs)
+    assert_eq(stmts.length, 1)
+    assert_eq(stmts[0].gsub(/\s+/, ' ').upcase, "ALTER TABLE FOO ALTER COLUMN WEAPON DROP NOT NULL;")
+  end
+end
+
+run_test "DeclarativeSupport::Table can create tables including columns with defaults" do
+  in_xmigra_schema do
+    do_or_die "git init", "Unable to initialize git repository"
+    decl_file = add_foo_declarative
+    
+    deserializer = XMigra::ImpdeclMigrationAdder::SupportedObjectDeserializer.new(decl_file.basename('.yaml').to_s, XMigra::NoSpecifics)
+    table_yaml = YAML.parse_file(decl_file)
+    table = deserializer.deserialize(table_yaml.children[0])
+    table.add_default('weapon', "'knife'")
+    
+    assert('weapon column does not have default') do
+      table.table_creation_items.any? do |i|
+        next unless i.kind_of?(XMigra::DeclarativeSupport::Table::ColumnCreationFragment)
+        next unless i.column.name == 'weapon'
+        next unless i.creation_sql =~ /DEFAULT\s+'knife'/
+        true
+      end
+    end
+    assert('default rendered as table constraint during table creation') do
+      !table.table_creation_items.any? do |i|
+        i.kind_of?(XMigra::DeclarativeSupport::Table::DefaultConstraint)
+      end
+    end
+  end
+end
+
+run_test "DeclarativeSupport::Table can add default constraints to or remove them from columns" do
+  in_xmigra_schema do
+    do_or_die "git init", "Unable to initialize git repository"
+    decl_file = add_foo_declarative
+    
+    deserializer = XMigra::ImpdeclMigrationAdder::SupportedObjectDeserializer.new(decl_file.basename('.yaml').to_s, XMigra::PgSQLSpecifics)
+    table_yaml = YAML.parse_file(decl_file)
+    table_notdefaulted = deserializer.deserialize(table_yaml.children[0])
+    table_defaulted = deserializer.deserialize(table_yaml.children[0])
+    table_defaulted.add_default('weapon', "'knife'")
+    
+    delta = XMigra::DeclarativeSupport::Table::Delta.new(table_notdefaulted, table_defaulted)
+    assert_eq(delta.new_columns, [])
+    assert_eq(delta.altered_column_pairs, [])
+    assert_eq(delta.removed_columns, [])
+    assert_eq(delta.constraints_to_drop, [])
+    assert_eq(delta.new_constraint_sql_clauses.length, 1)
+    assert_eq(
+      delta.new_constraint_sql_clauses[0].gsub(/\s+/, ' ').upcase,
+      "CONSTRAINT DF_WEAPON DEFAULT 'KNIFE' FOR WEAPON"
+    )
+    
+    delta = XMigra::DeclarativeSupport::Table::Delta.new(table_defaulted, table_notdefaulted)
+    assert_eq(delta.new_columns, [])
+    assert_eq(delta.altered_column_pairs, [])
+    assert_eq(delta.removed_columns, [])
+    assert_eq(delta.new_constraint_sql_clauses, [])
+    assert_eq(delta.constraints_to_drop.length, 1)
+    assert_eq(delta.constraints_to_drop[0], "DF_weapon")
+  end
+end
+
+run_test "DeclarativeSupport::Table can alter an existing default constraint on a column" do
+  in_xmigra_schema do
+    do_or_die "git init", "Unable to initialize git repository"
+    decl_file = add_foo_declarative
+    
+    deserializer = XMigra::ImpdeclMigrationAdder::SupportedObjectDeserializer.new(decl_file.basename('.yaml').to_s, XMigra::PgSQLSpecifics)
+    table_yaml = YAML.parse_file(decl_file)
+    table_old = deserializer.deserialize(table_yaml.children[0])
+    table_old.add_default('weapon', "'knife'")
+    table_new = deserializer.deserialize(table_yaml.children[0])
+    table_new.add_default('weapon', "'rock'")
+    
+    delta = XMigra::DeclarativeSupport::Table::Delta.new(table_old, table_new)
+    assert_eq(delta.new_columns, [])
+    assert_eq(delta.altered_column_pairs, [])
+    assert_eq(delta.removed_columns, [])
+    assert_eq(delta.constraints_to_drop.length, 1)
+    assert_eq(delta.constraints_to_drop[0], "DF_weapon")
+    assert_eq(delta.new_constraint_sql_clauses.length, 1)
+    assert_eq(
+      delta.new_constraint_sql_clauses[0].gsub(/\s+/, ' ').upcase,
+      "CONSTRAINT DF_WEAPON DEFAULT 'ROCK' FOR WEAPON"
+    )
   end
 end
