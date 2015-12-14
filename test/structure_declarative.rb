@@ -18,6 +18,14 @@ columns:
   return decl_file
 end
 
+def make_first_commit
+  File.open('README.md', 'w') do |f|
+    f.puts "This is a sample"
+  end
+  do_or_die %Q{git add README.md}, "Unable to add README.md to git index"
+  do_or_die %Q{git commit -m "first commit"}, "Unable to make first commit"
+end
+
 run_test "XMigra detects new declarative file" do
   in_xmigra_schema do
     add_foo_declarative
@@ -100,6 +108,7 @@ end
 run_test "Adoption migrations are valid when generating upgrade" do
   in_xmigra_schema do
     do_or_die "git init", "Unable to initialize git repository"
+    make_first_commit
     decl_file = add_foo_declarative
     
     XMigra::Program.run(
@@ -126,6 +135,7 @@ end
 run_test "XMigra can build an upgrade script including an impdecl migration" do
   in_xmigra_schema do
     do_or_die "git init", "Unable to initialize git repository"
+    make_first_commit
     decl_file = add_foo_declarative
     
     tool = XMigra::ImpdeclMigrationAdder.new('.')

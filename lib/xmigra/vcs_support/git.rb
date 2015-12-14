@@ -1,4 +1,5 @@
 require 'xmigra/console'
+require 'xmigra/migration_chain'
 
 module XMigra
   module GitSpecifics
@@ -7,6 +8,7 @@ module XMigra
     MASTER_HEAD_ATTRIBUTE = 'xmigra-master'
     MASTER_BRANCH_SUBDIR = 'xmigra-master'
     PRODUCTION_CHAIN_EXTENSION_COMMAND = 'xmigra-on-production-chain-extended'
+    ATTRIBUTE_UNSPECIFIED = 'unspecified'
     
     class AttributesFile
       def initialize(effect_root, access=:shared)
@@ -220,7 +222,13 @@ module XMigra
     end
     
     def branch_identifier
-      return (if self.production
+      for_production = begin
+        self.production
+      rescue NameError
+        false
+      end
+      
+      return (if for_production
         self.git_branch_info[0]
       else
         return @git_branch_identifier if defined? @git_branch_identifier
@@ -236,9 +244,25 @@ module XMigra
       if commit
         self.git_fetch_master_branch
         
-        # If there are no commits between the master head and *commit*, then
-        # *commit* is production-ish
-        return (self.git_commits_in? self.git_master_local_branch..commit) ? :development : :production
+        # If there are commits between the master head and *commit*, then
+        # *commit* is not production-ish
+        if self.git_commits_in? self.git_master_local_branch..commit
+          return :development
+        end
+        
+        # Otherwise, look to see if all migrations in the migration chain for
+        # commit are in the master head with no diffs -- the migration chain
+        # is a "prefix" of the chain in the master head:
+        migration_chain = RepoStoredMigrationChain.new(
+          commit,
+          Pathname(path).join(SchemaManipulator::STRUCTURE_SUBDIR),
+        )
+        return :production if self.git(
+          :diff, '--name-only',
+          self.git_master_local_branch, commit, '--',
+          *migration_chain.map(&:file_path)
+        ).empty?
+        return :development
       end
       
       return nil unless self.git_master_head(:required=>false)
@@ -469,17 +493,17 @@ module XMigra
         :required=>options[:required]
       )
       return nil if master_head.nil?
-      return @git_master_head = master_head
+      return @git_master_head = (master_head if master_head != GitSpecifics::ATTRIBUTE_UNSPECIFIED)
     end
     
     def git_branch
       return @git_branch if defined? @git_branch
-      return @git_branch = git('rev-parse', %w{--abbrev-ref HEAD}).chomp
+      return @git_branch = git('rev-parse', %w{--abbrev-ref HEAD}, :quiet=>true).chomp
     end
     
     def git_schema_commit
       return @git_commit if defined? @git_commit
-      reported_commit = git(:log, %w{-n1 --format=%H --}, self.path).chomp
+      reported_commit = git(:log, %w{-n1 --format=%H --}, self.path, :quiet=>true).chomp
       raise VersionControlError, "Schema not committed" if reported_commit.empty?
       return @git_commit = reported_commit
     end
@@ -547,6 +571,27 @@ module XMigra
         '--',
         path || self.path
       ) != ''
+    end
+    
+    class RepoStoredMigrationChain < MigrationChain
+      def initialize(branch, path, options={})
+        @branch = branch
+        options[:vcs_specifics] = GitSpecifics
+        super(path, options)
+      end
+      
+      protected
+      def yaml_of_file(fpath)
+        fdir, fname = Pathname(fpath).split
+        file_contents = Dir.chdir(fdir) do |pwd|
+          GitSpecifics.run_git(:show, "#{@branch}:./#{fname}")
+        end
+        begin
+          YAML.load(file_contents, fpath.to_s)
+        rescue
+          raise XMigra::Error, "Error loading/parsing #{fpath}"
+        end
+      end
     end
   end
 end

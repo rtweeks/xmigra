@@ -167,10 +167,6 @@ if GIT_PRESENT
       
       `git clone "#{upstream.expand_path}" "#{repo}" 2>/dev/null`
       
-      Dir.chdir(upstream) do
-        commit_a_migration "foo table"
-      end
-      
       Dir.chdir(repo) do
         commit_a_migration "bar table"
         
