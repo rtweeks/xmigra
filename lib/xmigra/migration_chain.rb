@@ -13,7 +13,9 @@ module XMigra
       db_specifics = options[:db_specifics]
       vcs_specifics = options[:vcs_specifics]
       
-      head_info = YAML.load_file(File.join(path, HEAD_FILE))
+      if (head_info = yaml_of_file(head_file_path = File.join(path, HEAD_FILE))).nil?
+        raise XMigra::Error, "#{head_file_path} does not exist"
+      end
       file = head_info[LATEST_CHANGE]
       prev_file = HEAD_FILE
       files_loaded = []
@@ -21,12 +23,7 @@ module XMigra
       until file.nil?
         file = XMigra.yaml_path(file)
         fpath = File.join(path, file)
-        break unless File.file?(fpath)
-        begin
-          mig_info = YAML.load_file(fpath)
-        rescue
-          raise XMigra::Error, "Error loading/parsing #{fpath}"
-        end
+        break if (mig_info = yaml_of_file(fpath)).nil?
         files_loaded << file
         mig_info["id"] = Migration::id_from_filename(file)
         migration = Migration.new(mig_info)
@@ -58,6 +55,16 @@ module XMigra
     # Test if the chain encompasses all migration-like filenames in the path
     def includes_all?
       @other_migrations.empty?
+    end
+    
+    protected
+    def yaml_of_file(fpath)
+      return nil unless File.file?(fpath)
+      begin
+        return YAML.load_file(fpath)
+      rescue
+        raise XMigra::Error, "Error loading/parsing #{fpath}"
+      end
     end
   end
 end
