@@ -1,4 +1,5 @@
 require 'xmigra/console'
+require 'xmigra/migration_chain'
 
 module XMigra
   module GitSpecifics
@@ -234,9 +235,25 @@ module XMigra
       if commit
         self.git_fetch_master_branch
         
-        # If there are no commits between the master head and *commit*, then
-        # *commit* is production-ish
-        return (self.git_commits_in? self.git_master_local_branch..commit) ? :development : :production
+        # If there are commits between the master head and *commit*, then
+        # *commit* is not production-ish
+        if self.git_commits_in? self.git_master_local_branch..commit
+          return :development
+        end
+        
+        # Otherwise, look to see if all migrations in the migration chain for
+        # commit are in the master head with no diffs -- the migration chain
+        # is a "prefix" of the chain in the master head:
+        migration_chain = RepoStoredMigrationChain.new(
+          commit,
+          Pathname(path).join(SchemaManipulator::STRUCTURE_SUBDIR),
+        )
+        return :production if self.git(
+          :diff, '--name-only',
+          self.git_master_local_branch, commit, '--',
+          *migration_chain.map(&:file_path)
+        ).empty?
+        return :development
       end
       
       return nil unless self.git_master_head(:required=>false)
@@ -418,6 +435,27 @@ module XMigra
         '--',
         path || self.path
       ) != ''
+    end
+    
+    class RepoStoredMigrationChain < MigrationChain
+      def initialize(branch, path, options={})
+        @branch = branch
+        options[:vcs_specifics] = GitSpecifics
+        super(path, options)
+      end
+      
+      protected
+      def yaml_of_file(fpath)
+        fdir, fname = Pathname(fpath).split
+        file_contents = Dir.chdir(fdir) do |pwd|
+          GitSpecifics.run_git(:show, "#{@branch}:./#{fname}")
+        end
+        begin
+          YAML.load(file_contents, fpath.to_s)
+        rescue
+          raise XMigra::Error, "Error loading/parsing #{fpath}"
+        end
+      end
     end
   end
 end
