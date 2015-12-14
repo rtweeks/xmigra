@@ -63,6 +63,33 @@ module XMigra
       if @after_fix
         @after_fix.call
       end
+      
+      fix_merged_declarative_relations!
+    end
+    
+    def fix_merged_declarative_relations!
+      # Update the latest implementing migration for any declarative
+      # file that is modified in the working copy
+      each_decohered_implementing_migration(
+        &method(:fix_decohered_implmeneting_migration!)
+      )
+    end
+    
+    def each_decohered_implementing_migration
+      tool = SchemaUpdater.new(@path.join(".."))
+      latest_impls = tool.migrations.latest_declarative_implementations
+      latest_impls.each_pair do |decl_file, migration|
+        next unless tool.vcs_file_modified?(decl_file)
+        yield migration.file_path, tool.vcs_latest_revision(migration.file_path)
+      end
+    end
+    
+    def fix_decohered_implmeneting_migration!(file_path, last_commit)
+      migration_info = YAML.load_file(file_path)
+      migration_info['pre-unbranch'] = last_commit
+      file_path.open('w') do |f|
+        $xmigra_yamler.dump(migration_info, f)
+      end
     end
   end
 end

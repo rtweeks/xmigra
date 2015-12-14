@@ -31,7 +31,7 @@ module XMigra
         )
         cmd_str = cmd_parts.join(' ')
         
-        output = `#{cmd_str}`
+        output = `#{cmd_str} 2>/dev/null`
         raise(VersionControlError, "Subversion command failed with exit code #{$?.exitstatus}") unless $?.success?
         return output if raw_result && !no_result
         return REXML::Document.new(output) unless no_result
@@ -222,6 +222,75 @@ END_OF_MESSAGE
       subversion(:resolve, '--accept=working', path, :get_result=>false)
     end
     
+    def vcs_uncommitted?
+      status = subversion_retrieve_status(file_path).elements['entry/wc-status']
+      status.nil? || status.attributes['item'] == 'unversioned'
+    end
+    
+    class VersionComparator
+      # vcs_object.kind_of?(SubversionSpecifics)
+      def initialize(vcs_object, options={})
+        @object = vcs_object
+        @expected_content_method = options[:expected_content_method]
+        @path_status = Hash.new do |h, file_path|
+          file_path = Pathname(file_path).expand_path
+          next h[file_path] if h.has_key?(file_path)
+          h[file_path] = @object.subversion_retrieve_status(file_path)
+        end
+      end
+      
+      def relative_version(file_path)
+        # Comparing @object.file_path (a) to file_path (b)
+        #
+        # returns: :newer, :equal, :older, or :missing
+        
+        b_status = @path_status[file_path].elements['entry/wc-status']
+        
+        return :missing if b_status.nil? || ['deleted', 'missing'].include?(b_status.attributes['item'])
+        
+        a_status = @path_status[@object.file_path].elements['entry/wc-status']
+        
+        if ['unversioned', 'added'].include? a_status.attributes['item']
+          if ['unversioned', 'added', 'modified'].include? b_status.attributes['item']
+            return relative_version_by_content(file_path)
+          end
+          
+          return :older
+        elsif a_status.attributes['item'] == 'normal'
+          return :newer unless b_status.attributes['item'] == 'normal'
+          
+          return begin
+            a_revision = a_status.elements['commit'].attributes['revision'].to_i
+            b_revision = b_status.elements['commit'].attributes['revision'].to_i
+            
+            if a_revision < b_revision
+              :newer
+            elsif b_revision < a_revision
+              :older
+            else
+              :equal
+            end
+          end
+        elsif b_status.attributes['item'] == 'normal'
+          return :older
+        else
+          return relative_version_by_content(file_path)
+        end
+      end
+      
+      def relative_version_by_content(file_path)
+        ec_method = @expected_content_method
+        if !ec_method || @object.send(ec_method, file_path)
+          return :equal
+        else
+          return :newer
+        end
+      end
+    end
+    
+    def vcs_comparator(options={})
+      VersionComparator.new(self, options)
+    end
     
     def vcs_move(old_path, new_path)
       subversion(:move, old_path, new_path, :get_result=>false)
@@ -263,6 +332,43 @@ END_OF_MESSAGE
       if match
         subversion(:cat, "-r#{tracer.earliest_loaded_revision}", path.to_s)
       end
+    end
+    
+    def vcs_contents(path, options={})
+      args = []
+      
+      if options[:revision]
+        args << "-r#{options[:revision]}"
+      end
+      
+      args << path.to_s
+      
+      subversion(:cat, *args)
+    end
+    
+    def vcs_latest_revision(a_file=nil)
+      if a_file.nil? && defined? @vcs_latest_revision
+        return @vcs_latest_revision
+      end
+      
+      val = subversion(:status, '-v', a_file || file_path).elements[
+        'string(status/target/entry/wc-status/commit/@revision)'
+      ]
+      (val.nil? ? val : val.to_i).tap do |val|
+        @vcs_latest_revision = val if a_file.nil?
+      end
+    end
+    
+    def vcs_changes_from(from_revision, file_path)
+      subversion(:diff, '-r', from_revision, file_path, :raw=>true)
+    end
+    
+    def vcs_most_recent_committed_contents(file_path)
+      subversion(:cat, file_path)
+    end
+    
+    def subversion_retrieve_status(file_path)
+      subversion(:status, '-v', file_path).elements['status/target']
     end
   end
   

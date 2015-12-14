@@ -733,6 +733,22 @@ module XMigra
       })
     end
     
+    def alter_table_columns_sql_statements(col_pairs)
+      col_pairs.flat_map do |old_col, col|
+        [].tap do |parts|
+          if !old_col.nullable? && col.nullable?
+            parts << "ALTER TABLE #{name} ALTER COLUMN #{col.name} DROP NOT NULL;"
+          end
+          if old_col.type != col.type
+            parts << "ALTER TABLE #{name} ALTER COLUMN #{col.name} TYPE #{col.type};"
+          end
+          if old_col.nullable? && !col.nullable?
+            parts << "ALTER TABLE #{name} ALTER COLUMN #{col.name} SET NOT NULL;"
+          end
+        end
+      end
+    end
+    
     class <<self
       def in_plpgsql(*args)
         variables = args[0].kind_of?(Hash) ? args.shift : {}

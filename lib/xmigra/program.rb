@@ -79,6 +79,7 @@ module XMigra
             puts(" " * indent + line.chomp)
           end
         end
+        puts
       end
       
       def show_subcommands_as_help(_1=nil)
@@ -191,6 +192,17 @@ END_OF_HELP
             flags.on("--dry-run", "Generated script will test commands", 
                      "  without committing changes") do
               options.dry_run = true
+            end
+          end
+          
+          if use[:impdecl_mode]
+            options.impdecl_special = {}
+            flags.on("--adopt", "New declarative adopts existing object") do
+              options.impdecl_special[:adopt] = true
+            end
+            flags.on("--renounce", "Deleted declarative releases object",
+                     "  from declarative management") do
+              options.impdecl_special[:renounce] = true
             end
           end
           
@@ -308,6 +320,8 @@ END_SECTION
     +-- database.yaml
     +-- permissions.yaml (optional)
     +-- structure
+    |   +-- declarative (optional)
+    |   |   +-- <declarative files>
     |   +-- head.yaml
     |   +-- <migration files>
     |   ...
@@ -394,11 +408,24 @@ SCHEMA/structure/head.yaml to reference the newly generated file.  It can also
 print a warning or run a command when the source condition indicates a database
 backup would be a good idea.
 
+A small variation on this standard for migration files exists in files ending
+with '.decl.yaml'.  These files are "declarative change implementation"
+migrations and have a few differences: they do not have a "changes" section,
+but do have "does", "of object", and "to realize" sections.  Each one of these
+files is tied to some change (including creation or deletion) of a '.yaml'
+file in the SCHEMA/structure/declarative subfolder. 
+
 The SCHEMA/structure/head.yaml file deserves special note: it contains a
 reference to the last migration to be applied.  Because of this, parallel
 development of database changes will cause conflicts in the contents of this
 file.  This is by design, and '%program_cmd unbranch' will assist in resolving
-these conflicts.
+these conflicts.  Due to the relationship between declarative change
+implementation migration files and their corresponding declarative file, if a
+merge of two version control branches results in a three-way merge of the
+declarative file, '%program_cmd unbranch' will modify the implementing
+migration file; a modification to that migration file during a
+'%program_cmd unbranch' was already a possibility, since the first migration
+local to the branch will have its "starting from" section adjusted.
 
 Care must be taken when committing migration files to version control; because
 the structure of production databases will be determined by the chain of
@@ -414,6 +441,34 @@ or critical feature updates) to another released version which developed along
 a parallel track is generally a tricky endeavor.  Please see the section on
 "branch upgrades" below for information on how %program_name supports this
 use case.
+END_SECTION
+      end
+      begin; section['The "SCHEMA/structure/declarative" Folder', <<END_SECTION]
+
+%program_name's canonical description of the database storage structures is encoded
+in the migration files in SCHEMA/structure.  The procedural nature of those
+files, however, makes them less useful than is ideal for programmers wanting
+information on the current storage structure of the database.  %program_name's
+structure/declarative system (with '.yaml' files stored in the
+SCHEMA/structure/declarative folder) allows programmers to place a declaration
+of the expected current state of a given database object in a file and get
+assistance from XMigra in building the migration(s) that implement the
+creation, revision, and destruction of that object.
+
+When a '.yaml' file is added to, modified in, or removed from the
+SCHEMA/structure/declarative folder, %program_name will not generate an upgrade script
+until a matching migration is added to implement that change in the migration
+chain.  If this error happens, %program_name will print out a list of all files
+with changes blocking the script generation, and '%program_cmd impdecl' can be
+used to create the implementing migration (see '%program_cmd help impdecl' for
+more information).
+
+In some cases it may be desirable to bring a database object that was not
+previously under declarative control into the declarative system without
+effecting any change to the database; similarly, there may be conditions under
+which it is preferable to take an object that is currently managed via the
+declarative system out from that management without destroying it.  %program_name
+provides the '--adopt' and '--renounce' flags to support these use cases.
 END_SECTION
       end
       begin; section['The "SCHEMA/access" Folder', <<END_SECTION]
@@ -517,7 +572,7 @@ supported values are:
 Each system can also have sub-settings that modify the generated scripts.
 
   Microsoft SQL Server:
-    The "MSSQL 2005 compatible" setting in SCEMA/database.yaml, if set to
+    The "MSSQL 2005 compatible" setting in SCHEMA/database.yaml, if set to
     "true", causes INSERT statements to be generated in a more verbose and
     SQL Server 2005 compatible manner.
 
@@ -789,6 +844,77 @@ END_OF_HELP
       edit(new_fpath) if options.edit
     end
     
+    subcommand 'decldoc', "Get help on supported structure/declarative syntax" do |argv|
+      args, options = command_line(argv, {},
+                                   :argument_desc=>"[TAG]",
+                                   :help=> <<END_OF_HELP)
+Use this command to list supported top level tags in structure/declarative YAML
+files or, by giving a TAG, to get the supported data schema for one of the
+tags.
+END_OF_HELP
+      argument_error_unless((0..1).include?(args.length),
+                            "'%prog $cmd' takes zero arguments or one argument.")
+      tag = args[0]
+      if tag.nil?
+        # Print a list of available tags
+        puts
+        puts "Supported structure/declarative tags:"
+        puts
+        ImpdeclMigrationAdder.each_support_type do |tag, klass|
+          next unless klass.respond_to?(:decldoc)
+          puts "    #{tag}"
+        end
+        puts
+      else
+        # Try to get the class associated with the tag and see if it provides
+        # documentation
+        impl_class = ImpdeclMigrationAdder.support_type(tag)
+        argument_error_unless(
+          !impl_class.nil?,
+          "#{tag} is not a supported tag for structure/declarative"
+        )
+        docmethod = begin
+          impl_class.method :decldoc
+        rescue
+          raise ArgumentError, "#{tag} is supported but undocumented"
+        end
+        puts
+        puts docmethod.call
+        puts
+      end
+    end
+    
+    subcommand 'impdecl', "Implement an outstanding structure/declarative change" do |argv|
+      args, options = command_line(argv, {:edit=>true, :impdecl_mode=>true},
+                                   :argument_desc=>"DECLARATIVE_PATH",
+                                   :help=> <<END_OF_HELP)
+When a new declarative file has been added, a declarative file has been
+removed, or a declarative file has been modified, running this command and
+specifying the path to that declarative file will add a new migration file
+at the end of the migration chain with a special setup that links it to the
+declarative file and the declarative file processing subsystem.
+
+The skeleton file generated by this command may have an
+"#{DeclarativeMigration::QUALIFICATION_KEY}" key, which will prevent this
+tool from generating an upgrade script.  Remove this key when the SQL for
+implementing this change is added or verified.
+
+The resulting new file may be opened in an editor (see the --[no-]edit
+option).
+
+As this command creates a new migration file in much the way the 
+'new --migration' command would, the explanation of production-chain-extension
+hooks given in 'new --help' also applies to this command.
+END_OF_HELP
+      
+      argument_error_unless(args.length == 1,
+                            "'%prog $cmd' takes one argument.")
+      file_path = Pathname(args[0])
+      tool = ImpdeclMigrationAdder.new(options.source_dir)
+      new_fpath = tool.add_migration_implementing_changes(file_path, options.impdecl_special)
+      edit(new_fpath) if options.edit
+    end
+    
     subcommand 'upgrade', "Generate an upgrade script" do |argv|
       args, options = command_line(argv, {:production=>true, :outfile=>true, :dry_run=>true, :permissions_too=>true},
                                    :help=> <<END_OF_HELP)
@@ -931,7 +1057,7 @@ The target working copy is neither marked for production branch recognition
 nor was the --dev-branch option given on the command line.  Because fixing the
 branched migration chain would require modifying a committed migration, this
 operation would result in a migration chain incapable of producing a production
-upgrage which, because the usage of the working copy's branch is ambiguous, 
+upgrade which, because the usage of the working copy's branch is ambiguous, 
 might leave this branch unable to fulfill its purpose.
 
 END_OF_MESSAGE

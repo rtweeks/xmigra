@@ -38,7 +38,8 @@ RUNNING THIS SCRIPT ON A PRODUCTION DATABASE WILL FAIL.
         ))
         @file_based_groups << (@migrations = MigrationChain.new(
           @path.join(STRUCTURE_SUBDIR),
-          :db_specifics=>@db_specifics
+          :db_specifics=>@db_specifics,
+          :vcs_specifics=>@vcs_specifics,
         ))
         
         @branch_upgrade = BranchUpgrade.new(branch_upgrade_file)
@@ -82,6 +83,7 @@ RUNNING THIS SCRIPT ON A PRODUCTION DATABASE WILL FAIL.
       end
       
       check_working_copy!
+      migrations.check_declaratives_current!
       
       intro_comment = @db_info.fetch('script comment', '')
       if Plugin.active

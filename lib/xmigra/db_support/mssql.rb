@@ -1189,6 +1189,13 @@ END
 END_OF_SQL
     end
     
+    def alter_table_columns_sql_statements(col_pairs)
+      col_pairs.map do |_, col|
+        nullability = (col.nullable? ? "" : "NOT ") + "NULL"
+        "ALTER TABLE #{name} ALTER COLUMN #{col.name} #{col.type} #{nullability};"
+      end
+    end
+    
     class << self
       def strip_identifier_quoting(s)
         case

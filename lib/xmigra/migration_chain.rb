@@ -1,4 +1,5 @@
 
+require 'xmigra/declarative_migration'
 require 'xmigra/migration'
 
 module XMigra
@@ -7,15 +8,16 @@ module XMigra
     LATEST_CHANGE = 'latest change'
     MIGRATION_FILE_PATTERN = /^\d{4}-\d\d-\d\d.*\.yaml$/i
     
+    include DeclarativeMigration::ChainSupport
+    
     def initialize(path, options={})
       super()
+      @path = Pathname(path)
       
       db_specifics = options[:db_specifics]
       vcs_specifics = options[:vcs_specifics]
       
-      if (head_info = yaml_of_file(head_file_path = File.join(path, HEAD_FILE))).nil?
-        raise XMigra::Error, "#{head_file_path} does not exist"
-      end
+      head_info = yaml_of_file(File.join(path, HEAD_FILE)) || {}
       file = head_info[LATEST_CHANGE]
       prev_file = HEAD_FILE
       files_loaded = []
@@ -30,6 +32,9 @@ module XMigra
         migration.file_path = File.expand_path(fpath)
         migration.extend(db_specifics) if db_specifics
         migration.extend(vcs_specifics) if vcs_specifics
+        if migration.file_path.end_with? ".decl.yaml"
+          migration.extend(DeclarativeMigration)
+        end
         unshift(migration)
         prev_file = file
         file = migration.follows
@@ -47,9 +52,11 @@ module XMigra
       @other_migrations.freeze
     end
     
+    attr_reader :path
+    
     # Test if the chain reaches back to the empty database
     def complete?
-      length > 0 && self[0].follows.nil?
+      length == 0 || self[0].follows.nil?
     end
     
     # Test if the chain encompasses all migration-like filenames in the path

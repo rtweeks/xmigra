@@ -163,7 +163,16 @@ module XMigra
     end
     
     def git(*args)
-      Dir.chdir(self.path) do |pwd|
+      _path = begin
+        self.path
+      rescue NameError
+        begin
+          self.schema_dir
+        rescue NameError
+          Pathname(self.file_path).dirname
+        end
+      end
+      Dir.chdir(_path) do |pwd|
         GitSpecifics.run_git(*args)
       end
     end
@@ -277,6 +286,15 @@ module XMigra
       return nil
     end
     
+    def vcs_contents(path, options={})
+      args = []
+      
+      commit = options.fetch(:revision, 'HEAD')
+      args << "#{commit}:#{path}"
+      
+      git(:show, *args)
+    end
+    
     def vcs_prod_chain_extension_handler
       attr_val = GitSpecifics.attr_values(
         PRODUCTION_CHAIN_EXTENSION_COMMAND,
@@ -295,6 +313,124 @@ module XMigra
         return handler_path if handler_path.exist?
       end
       return attr_val
+    end
+    
+    def vcs_uncommitted?
+      git_status == '??'
+    end
+    
+    class VersionComparator
+      # vcs_object.kind_of?(GitSpecifics)
+      def initialize(vcs_object, options={})
+        @object = vcs_object
+        @expected_content_method = options[:expected_content_method]
+        @path_statuses = Hash.new do |h, file_path|
+          file_path = Pathname(file_path).expand_path
+          next h[file_path] if h.has_key?(file_path)
+          h[file_path] = @object.git_retrieve_status(file_path)
+        end
+      end
+      
+      def relative_version(file_path)
+        # Comparing @object.file_path (a) to file_path (b)
+        #
+        # returns: :newer, :equal, :older, or :missing
+        
+        b_status = @path_statuses[file_path]
+        
+        return :missing if b_status.nil? || b_status.include?('D')
+        
+        a_status = @path_statuses[@object.file_path]
+        
+        if a_status == '??' || a_status[0] == 'A'
+          if b_status == '??' || b_status[0] == 'A' || b_status.include?('M')
+            return relative_version_by_content(file_path)
+          end
+          
+          return :older
+        elsif a_status == '  '
+          return :newer unless b_status == '  '
+          
+          return begin
+            a_commit = latest_commit(@object.file_path)
+            b_commit = latest_commit(file_path)
+            
+            if @object.git_commits_in? a_commit..b_commit, file_path
+              :newer
+            elsif @object.git_commits_in? b_commit..a_commit, @object.file_path
+              :older
+            else
+              :equal
+            end
+          end
+        elsif b_status == '  '
+          return :older
+        else
+          return relative_version_by_content(file_path)
+        end
+      end
+      
+      def latest_commit(file_path)
+        @object.git(
+          :log,
+          '--pretty=format:%H',
+          '-1',
+          '--',
+          file_path
+        )
+      end
+      
+      def relative_version_by_content(file_path)
+        ec_method = @expected_content_method
+        if !ec_method || @object.send(ec_method, file_path)
+          return :equal
+        else
+          return :newer
+        end
+      end
+    end
+    
+    def vcs_comparator(options={})
+      VersionComparator.new(self, options)
+    end
+    
+    def vcs_latest_revision(a_file=nil)
+      if a_file.nil? && defined? @vcs_latest_revision
+        return @vcs_latest_revision
+      end
+      
+      git(
+        :log,
+        '-n1',
+        '--pretty=format:%H',
+        '--',
+        a_file || file_path,
+        :quiet=>true
+      ).chomp.tap do |val|
+        @vcs_latest_revision = val if a_file.nil?
+      end
+    end
+    
+    def vcs_changes_from(from_commit, file_path)
+      git(:diff, from_commit, '--', file_path)
+    end
+    
+    def vcs_most_recent_committed_contents(file_path)
+      git(:show, "HEAD:#{file_path}", :quiet=>true)
+    end
+    
+    def git_status
+      @git_status ||= git_retrieve_status(file_path)
+    end
+    
+    def git_retrieve_status(a_path)
+      return nil unless Pathname(a_path).exist?
+      
+      if git('status', '--porcelain', a_path.to_s) =~ /^.+?(?= \S)/
+        $&
+      else
+        '  '
+      end
     end
     
     def production_pattern
@@ -362,12 +498,12 @@ module XMigra
     
     def git_branch
       return @git_branch if defined? @git_branch
-      return @git_branch = git('rev-parse', %w{--abbrev-ref HEAD}).chomp
+      return @git_branch = git('rev-parse', %w{--abbrev-ref HEAD}, :quiet=>true).chomp
     end
     
     def git_schema_commit
       return @git_commit if defined? @git_commit
-      reported_commit = git(:log, %w{-n1 --format=%H --}, self.path).chomp
+      reported_commit = git(:log, %w{-n1 --format=%H --}, self.path, :quiet=>true).chomp
       raise VersionControlError, "Schema not committed" if reported_commit.empty?
       return @git_commit = reported_commit
     end
