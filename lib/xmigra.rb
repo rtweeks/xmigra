@@ -251,8 +251,47 @@ module XMigra
       end
     end
     
-    def secure_digest(s)
-      [Digest::MD5.digest(s)].pack('m0').chomp
+    def secure_digest(s, options={:encoding=>:base64})
+      digest_value = Digest::MD5.digest(s)
+      case options[:encoding]
+      when nil
+        digest_value
+      when :base64
+        [digest_value].pack('m0').chomp
+      when :base32
+        base32encoding(digest_value)
+      end
+    end
+    
+    BASE_32_ENCODING = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567'
+    def base32encoding(bytes)
+      carry = 0
+      carry_bits = 0
+      ''.tap do |result|
+        bytes.each_byte do |b|
+          # From b we need the (5 - carry_bits) most significant bits
+          needed_bits = 5 - carry_bits
+          code_unit = (carry << needed_bits) | b >> (8 - needed_bits)
+          result << BASE_32_ENCODING[code_unit]
+          
+          if needed_bits <= 3
+            # Extra character out of this byte
+            code_unit = (b >> (3 - needed_bits)) & 0x1F
+            result << BASE_32_ENCODING[code_unit]
+            carry_bits = (3 - needed_bits)
+          else
+            carry_bits = 8 - needed_bits
+          end
+          carry = b & ((1 << carry_bits) - 1)
+        end
+        
+        if carry_bits > 0
+          code_unit = carry << (5 - carry_bits)
+          result << BASE_32_ENCODING[code_unit]
+        end
+        
+        result << '=' * (7 - ((result.length + 7) % 8))
+      end
     end
   end
   
@@ -300,6 +339,9 @@ module XMigra
       ARGV,
       :error=>proc do |e|
         STDERR.puts("#{e} (#{e.class})") unless e.is_a?(XMigra::Program::QuietError)
+        if e.class.const_defined? :COMMAND_LINE_HELP
+          STDERR.puts(XMigra.program_message(e.class::COMMAND_LINE_HELP))
+        end
         exit(2) if e.is_a?(OptionParser::ParseError)
         exit(2) if e.is_a?(XMigra::Program::ArgumentError)
         exit(1)
@@ -322,6 +364,7 @@ require 'xmigra/function'
 require 'xmigra/plugin'
 
 require 'xmigra/access_artifact_collection'
+require 'xmigra/impdecl_migration_adder'
 require 'xmigra/index'
 require 'xmigra/index_collection'
 require 'xmigra/migration'
@@ -331,6 +374,8 @@ require 'xmigra/branch_upgrade'
 require 'xmigra/schema_manipulator'
 require 'xmigra/schema_updater'
 require 'xmigra/new_migration_adder'
+require 'xmigra/new_index_adder'
+require 'xmigra/new_access_artifact_adder'
 require 'xmigra/permission_script_writer'
 require 'xmigra/source_tree_initializer'
 

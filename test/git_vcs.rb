@@ -167,10 +167,6 @@ if GIT_PRESENT
       
       `git clone "#{upstream.expand_path}" "#{repo}" 2>/dev/null`
       
-      Dir.chdir(upstream) do
-        commit_a_migration "foo table"
-      end
-      
       Dir.chdir(repo) do
         commit_a_migration "bar table"
         
@@ -264,6 +260,70 @@ if GIT_PRESENT
           tool.extend(capture_chain_extension)
           tool.add_migration('Create foo table')
           assert_eq tool.captured_call_args, [[]]
+        end
+      end
+    end
+  end
+  
+  run_test "XMigra does not put grants in upgrade by default" do
+    1.temp_dirs do |repo|
+      initialize_git_repo(repo)
+      
+      Dir.chdir(repo) do
+        commit_a_migration "first table"
+        File.open(XMigra::SchemaManipulator::PERMISSIONS_FILE, 'w') do |grants_file|
+          YAML.dump(
+            {
+              "foo" => {
+                "alice" => "ALL",
+                "bob" => "SELECT",
+                "candace" => ["INSERT", "SELECT", "UPDATE"],
+              },
+            }, 
+            grants_file
+          )
+        end
+        
+        XMigra::SchemaUpdater.new('.').tap do |tool|
+          sql = tool.update_sql
+          assert_not_include sql, /GRANT\s+ALL.*?alice/
+          assert_not_include sql, /GRANT\s+SELECT.*?bob/
+          assert_not_include sql, /GRANT\s+INSERT.*?candace/
+          assert_not_include sql, /GRANT\s+SELECT.*?candace/
+          assert_not_include sql, /GRANT\s+UPDATE.*?candace/
+        end
+      end
+    end
+  end
+  
+  run_test "XMigra puts grants in upgrade when requested" do
+    1.temp_dirs do |repo|
+      initialize_git_repo(repo)
+      
+      Dir.chdir(repo) do
+        commit_a_migration "first table"
+        File.open(XMigra::SchemaManipulator::PERMISSIONS_FILE, 'w') do |grants_file|
+          YAML.dump(
+            {
+              "foo" => {
+                "alice" => "ALL",
+                "bob" => "SELECT",
+                "candace" => ["INSERT", "SELECT", "UPDATE"],
+              },
+            }, 
+            grants_file
+          )
+        end
+        
+        XMigra::SchemaUpdater.new('.').tap do |tool|
+          tool.include_grants = true
+          
+          sql = tool.update_sql
+          assert_include sql, /GRANT\s+ALL.*?alice/
+          assert_include sql, /GRANT\s+SELECT.*?bob/
+          assert_include sql, /GRANT\s+INSERT.*?candace/
+          assert_include sql, /GRANT.*?SELECT.*?candace/
+          assert_include sql, /GRANT.*?UPDATE.*?candace/
         end
       end
     end

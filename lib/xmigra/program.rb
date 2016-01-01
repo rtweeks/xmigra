@@ -79,6 +79,7 @@ module XMigra
             puts(" " * indent + line.chomp)
           end
         end
+        puts
       end
       
       def show_subcommands_as_help(_1=nil)
@@ -101,14 +102,30 @@ module XMigra
           flags.separator ''
           flags.separator 'Subcommand options:'
           
+          if use[:source_file_type]
+            options.source_file_type = nil
+            [
+              '--migration migration',
+              '--view view',
+              '--procedure stored procedure',
+              '--function user defined function',
+              '--index index',
+            ].each do |opt|
+              flag, desc = opt.split(' ', 2)
+              flags.on(flag, "Select #{desc} as the source file type") do
+                set_source_type(options, flag[2..-1].to_sym)
+              end
+            end
+          end
+          
           if use[:target_type]
             options.target_type = :unspecified
             allowed = [:exact, :substring, :regexp]
             flags.on(
               "--by=TYPE", allowed,
               "Specify how TARGETs are matched",
-              "against subject strings",
-              "(#{allowed.collect {|i| i.to_s}.join(', ')})"
+              "  against subject strings",
+              "  (#{allowed.collect {|i| i.to_s}.join(', ')})"
             ) do |type|
               options.target_type = type
             end
@@ -129,7 +146,7 @@ VISUAL is preferred, then the one specified by EDITOR.  If neither of these
 environment variables is set no editor will be opened.
 END_OF_HELP
             flags.on("--[no-]edit", "Open the resulting file in an editor",
-                     "(defaults to #{options.edit})") do |v|
+                     "  (defaults to #{options.edit})") do |v|
               options.edit = %w{EDITOR VISUAL}.any? {|k| ENV.has_key?(k)} && v
             end
           end
@@ -140,10 +157,19 @@ END_OF_HELP
             flags.on(
               "--match=SUBJECT", allowed,
               "Specify the type of subject against",
-              "which TARGETs match",
-              "(#{allowed.collect {|i| i.to_s}.join(', ')})"
+              "  which TARGETs match",
+              "  (#{allowed.collect {|i| i.to_s}.join(', ')})"
             ) do |type|
               options.search_type = type
+            end
+          end
+          
+          if use[:permissions_too]
+            options.include_permissions = nil
+            flags.on("--[no-]grants-included",
+                     "Include (or exclude) permission grants",
+                     "  (overrides setting in #{SchemaManipulator::DBINFO_FILE})") do |v|
+              options.include_permissions = v
             end
           end
           
@@ -163,9 +189,20 @@ END_OF_HELP
           
           if use[:dry_run]
             options.dry_run = false
-            flags.on("--dry-run", "Generated script will test upgrade", 
-                     "  commands without committing changes") do
+            flags.on("--dry-run", "Generated script will test commands", 
+                     "  without committing changes") do
               options.dry_run = true
+            end
+          end
+          
+          if use[:impdecl_mode]
+            options.impdecl_special = {}
+            flags.on("--adopt", "New declarative adopts existing object") do
+              options.impdecl_special[:adopt] = true
+            end
+            flags.on("--renounce", "Deleted declarative releases object",
+                     "  from declarative management") do
+              options.impdecl_special[:renounce] = true
             end
           end
           
@@ -217,6 +254,14 @@ END_OF_HELP
         when editor = ENV['EDITOR']
           system(%Q{#{editor} "#{fpath}"})
         end
+      end
+      
+      def set_source_type(options, type)
+        argument_error_unless(
+          [nil, type].include?(options.source_file_type),
+          "Source type cannot be #{options.source_file_type} and #{type}"
+        )
+        options.source_file_type = type
       end
     end
     
@@ -275,6 +320,8 @@ END_SECTION
     +-- database.yaml
     +-- permissions.yaml (optional)
     +-- structure
+    |   +-- declarative (optional)
+    |   |   +-- <declarative files>
     |   +-- head.yaml
     |   +-- <migration files>
     |   ...
@@ -361,11 +408,24 @@ SCHEMA/structure/head.yaml to reference the newly generated file.  It can also
 print a warning or run a command when the source condition indicates a database
 backup would be a good idea.
 
+A small variation on this standard for migration files exists in files ending
+with '.decl.yaml'.  These files are "declarative change implementation"
+migrations and have a few differences: they do not have a "changes" section,
+but do have "does", "of object", and "to realize" sections.  Each one of these
+files is tied to some change (including creation or deletion) of a '.yaml'
+file in the SCHEMA/structure/declarative subfolder. 
+
 The SCHEMA/structure/head.yaml file deserves special note: it contains a
 reference to the last migration to be applied.  Because of this, parallel
 development of database changes will cause conflicts in the contents of this
 file.  This is by design, and '%program_cmd unbranch' will assist in resolving
-these conflicts.
+these conflicts.  Due to the relationship between declarative change
+implementation migration files and their corresponding declarative file, if a
+merge of two version control branches results in a three-way merge of the
+declarative file, '%program_cmd unbranch' will modify the implementing
+migration file; a modification to that migration file during a
+'%program_cmd unbranch' was already a possibility, since the first migration
+local to the branch will have its "starting from" section adjusted.
 
 Care must be taken when committing migration files to version control; because
 the structure of production databases will be determined by the chain of
@@ -381,6 +441,34 @@ or critical feature updates) to another released version which developed along
 a parallel track is generally a tricky endeavor.  Please see the section on
 "branch upgrades" below for information on how %program_name supports this
 use case.
+END_SECTION
+      end
+      begin; section['The "SCHEMA/structure/declarative" Folder', <<END_SECTION]
+
+%program_name's canonical description of the database storage structures is encoded
+in the migration files in SCHEMA/structure.  The procedural nature of those
+files, however, makes them less useful than is ideal for programmers wanting
+information on the current storage structure of the database.  %program_name's
+structure/declarative system (with '.yaml' files stored in the
+SCHEMA/structure/declarative folder) allows programmers to place a declaration
+of the expected current state of a given database object in a file and get
+assistance from XMigra in building the migration(s) that implement the
+creation, revision, and destruction of that object.
+
+When a '.yaml' file is added to, modified in, or removed from the
+SCHEMA/structure/declarative folder, %program_name will not generate an upgrade script
+until a matching migration is added to implement that change in the migration
+chain.  If this error happens, %program_name will print out a list of all files
+with changes blocking the script generation, and '%program_cmd impdecl' can be
+used to create the implementing migration (see '%program_cmd help impdecl' for
+more information).
+
+In some cases it may be desirable to bring a database object that was not
+previously under declarative control into the declarative system without
+effecting any change to the database; similarly, there may be conditions under
+which it is preferable to take an object that is currently managed via the
+declarative system out from that management without destroying it.  %program_name
+provides the '--adopt' and '--renounce' flags to support these use cases.
 END_SECTION
       end
       begin; section['The "SCHEMA/access" Folder', <<END_SECTION]
@@ -431,6 +519,11 @@ square brackets as a quotation mechanism, and square brackets have special
 meaning in YAML, so it is necessary use quoted strings or a scalar block to
 contain them).  Any access objects listed in this way will be created before
 the referencing object.
+
+Through use of the "--function", "--procedure", or "--view" flags, the
+'%program_cmd new' command can be directed to generate a skeleton file for
+this directory, with the option of opening the resulting file in an editor.
+Please see '%program_cmd help new' for details.
 END_SECTION
       end
       begin; section['The "SCHEMA/indexes" Folder', <<END_SECTION]
@@ -454,6 +547,10 @@ Index definition files use only the "sql" section to provide the SQL definition
 of the index.  Index definitions do not support use of the filename
 metavariable because renaming an index would cause it to be dropped and
 re-created.
+
+As is the case for files in the SCHEMA/access folder, the skeleton for a new
+index can be generated with the '%program_cmd new --index' command.  Details
+are available with '%program_cmd help new'.
 END_SECTION
       end
       begin; section['The "SCHEMA/database.yaml" File', <<END_SECTION]
@@ -475,7 +572,7 @@ supported values are:
 Each system can also have sub-settings that modify the generated scripts.
 
   Microsoft SQL Server:
-    The "MSSQL 2005 compatible" setting in SCEMA/database.yaml, if set to
+    The "MSSQL 2005 compatible" setting in SCHEMA/database.yaml, if set to
     "true", causes INSERT statements to be generated in a more verbose and
     SQL Server 2005 compatible manner.
 
@@ -523,6 +620,13 @@ the plugin.  While the resulting script will still (if possible) be transacted,
 the incompatibility may not be discovered until the script is run against a
 production database, requiring cancellation of deployment.  Use this feature
 with extreme caution.
+
+grants in upgrade
+-----------------
+
+This section optionally (defaulting to "false") specifies whether permission
+management is included in generated upgrade scripts.  The behavior specified by
+this section may be overridden on the command line with an option.
 END_SECTION
       end
       begin; section['Script Generation Modes', <<END_SECTION]
@@ -674,14 +778,29 @@ END_OF_HELP
       end
     end
     
-    subcommand 'new', "Create a new migration file" do |argv|
-      args, options = command_line(argv, {:edit=>true},
-                                   :argument_desc=>"MIGRATION_SUMMARY",
+    subcommand 'new', "Create a new source file" do |argv|
+      args, options = command_line(argv, {:edit=>true, :source_file_type=>true},
+                                   :argument_desc=>"MIGRATION_SUMMARY_OR_NAME",
                                    :help=> <<END_OF_HELP)
-This command generates a new migration file and ties it into the current
-migration chain.  The name of the new file is generated from today's date and
-the given MIGRATION_SUMMARY.  The resulting new file may be opened in an
-editor (see the --[no-]edit option).
+This command generates a new XMigra source file.  It can create a migration
+file or a view, stored procedure, user defined function, or index definition
+file, with the the default being a migration file.
+
+When generating a migration file, MIGRATION_SUMMARY_OR_NAME is taken as a
+brief summary of the migration and used, along with today's date, to generate
+a name for the migration file.
+
+When index definition file generation is selected, MIGRATION_SUMMARY_OR_NAME
+is taken as the name of the index to create, and an index file with this
+name and skeleton content will be created.
+
+Otherwise, MIGRATION_SUMMARY_OR_NAME will be taken as the name of the access
+artifact to create, and the file will be named for it and appropriate skeleton
+content will be generated.  This command may fail with an error for source
+file types not supported by the database system declared in database.yaml.
+
+In all cases, the resulting new file may be opened in an editor (see the
+--[no-]edit option).
 
 If this command extends the production migration chain, it will attempt to
 locate a handler function ("on-prod-chain-extended-local", a VCS-specified
@@ -696,20 +815,108 @@ END_OF_HELP
       
       argument_error_unless(args.length == 1,
                             "'%prog %cmd' takes one argument.")
-      migration_summary = args[0]
+      file_type = options.source_file_type || :migration
+      if file_type == :migration
+        tool_spec = [NewMigrationAdder, :add_migration]
+        arg_desc = "Migration summary"
+      elsif file_type == :index
+        tool_spec = [NewIndexAdder, :add_index]
+        arg_desc = "Index name"
+      else
+        tool_spec = [NewAccessArtifactAdder, :add_artifact, true]
+        arg_desc = "Access artifact name"
+      end
+      
       argument_error_unless(
-        migration_summary.chars.all? {|c| !ILLEGAL_FILENAME_CHARS.include?(c)},
-        "Migration summary may not contain any of: " + ILLEGAL_FILENAME_CHARS
+        args[0].chars.all? {|c| !ILLEGAL_FILENAME_CHARS.include?(c)},
+        arg_desc + " may not contain any of: " + ILLEGAL_FILENAME_CHARS
       )
       
-      tool = NewMigrationAdder.new(options.source_dir).extend(WarnToStderr)
-      new_fpath = tool.add_migration(migration_summary)
+      tool = tool_spec[0].new(options.source_dir).extend(WarnToStderr)
+      create_proc = tool.method(tool_spec[1])
+      new_fpath = begin
+        if tool_spec[2]
+          create_proc.call(file_type, args[0])
+        else
+          create_proc.call(args[0])
+        end
+      end
+      edit(new_fpath) if options.edit
+    end
+    
+    subcommand 'decldoc', "Get help on supported structure/declarative syntax" do |argv|
+      args, options = command_line(argv, {},
+                                   :argument_desc=>"[TAG]",
+                                   :help=> <<END_OF_HELP)
+Use this command to list supported top level tags in structure/declarative YAML
+files or, by giving a TAG, to get the supported data schema for one of the
+tags.
+END_OF_HELP
+      argument_error_unless((0..1).include?(args.length),
+                            "'%prog $cmd' takes zero arguments or one argument.")
+      tag = args[0]
+      if tag.nil?
+        # Print a list of available tags
+        puts
+        puts "Supported structure/declarative tags:"
+        puts
+        ImpdeclMigrationAdder.each_support_type do |tag, klass|
+          next unless klass.respond_to?(:decldoc)
+          puts "    #{tag}"
+        end
+        puts
+      else
+        # Try to get the class associated with the tag and see if it provides
+        # documentation
+        impl_class = ImpdeclMigrationAdder.support_type(tag)
+        argument_error_unless(
+          !impl_class.nil?,
+          "#{tag} is not a supported tag for structure/declarative"
+        )
+        docmethod = begin
+          impl_class.method :decldoc
+        rescue
+          raise ArgumentError, "#{tag} is supported but undocumented"
+        end
+        puts
+        puts docmethod.call
+        puts
+      end
+    end
+    
+    subcommand 'impdecl', "Implement an outstanding structure/declarative change" do |argv|
+      args, options = command_line(argv, {:edit=>true, :impdecl_mode=>true},
+                                   :argument_desc=>"DECLARATIVE_PATH",
+                                   :help=> <<END_OF_HELP)
+When a new declarative file has been added, a declarative file has been
+removed, or a declarative file has been modified, running this command and
+specifying the path to that declarative file will add a new migration file
+at the end of the migration chain with a special setup that links it to the
+declarative file and the declarative file processing subsystem.
+
+The skeleton file generated by this command may have an
+"#{DeclarativeMigration::QUALIFICATION_KEY}" key, which will prevent this
+tool from generating an upgrade script.  Remove this key when the SQL for
+implementing this change is added or verified.
+
+The resulting new file may be opened in an editor (see the --[no-]edit
+option).
+
+As this command creates a new migration file in much the way the 
+'new --migration' command would, the explanation of production-chain-extension
+hooks given in 'new --help' also applies to this command.
+END_OF_HELP
       
+      argument_error_unless(args.length == 1,
+                            "'%prog $cmd' takes one argument.")
+      file_path = Pathname(args[0])
+      tool = ImpdeclMigrationAdder.new(options.source_dir)
+      new_fpath = tool.add_migration_implementing_changes(file_path, options.impdecl_special)
       edit(new_fpath) if options.edit
     end
     
     subcommand 'upgrade', "Generate an upgrade script" do |argv|
-      args, options = command_line(argv, {:production=>true, :outfile=>true, :dry_run=>true},
+      args, options = command_line(argv, {:production=>true, :outfile=>true, :dry_run=>true, :permissions_too=>true},
                                    :help=> <<END_OF_HELP)
 Running this command will generate an update script from the source schema.
 Generation of a production script involves more checks on the status of the
@@ -726,6 +933,7 @@ END_OF_HELP
       sql_gen.load_plugin!
       sql_gen.production = options.production
       sql_gen.dry_run = options.dry_run
+      sql_gen.include_grants = options.include_permissions
       
       output_to(options.outfile) do |out_stream|
         out_stream.print(sql_gen.update_sql)
@@ -849,7 +1057,7 @@ The target working copy is neither marked for production branch recognition
 nor was the --dev-branch option given on the command line.  Because fixing the
 branched migration chain would require modifying a committed migration, this
 operation would result in a migration chain incapable of producing a production
-upgrage which, because the usage of the working copy's branch is ambiguous, 
+upgrade which, because the usage of the working copy's branch is ambiguous, 
 might leave this branch unable to fulfill its purpose.
 
 END_OF_MESSAGE

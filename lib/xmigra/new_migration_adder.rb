@@ -40,12 +40,7 @@ module XMigra
       )
       raise(XMigra::Error, "Migration file\"#{new_fpath.basename}\" already exists") if new_fpath.exist?
       
-      new_data = {
-        Migration::FOLLOWS=>head_info.fetch(MigrationChain::LATEST_CHANGE, Migration::EMPTY_DB),
-        'sql'=>options.fetch(:sql, "<<<<< INSERT SQL HERE >>>>>\n").dup.extend(LiteralYamlStyle),
-        'description'=>options.fetch(:description, "<<<<< DESCRIPTION OF MIGRATION >>>>>").dup.extend(FoldedYamlStyle),
-        Migration::CHANGES=>options.fetch(:changes, ["<<<<< WHAT THIS MIGRATION CHANGES >>>>>"]),
-      }
+      new_data = migration_data(head_info, options)
       
       # Write the head file first, in case a lock is required
       old_head_info = head_info.dup
@@ -83,6 +78,15 @@ module XMigra
       production_chain_extended if extending_production
       
       return new_fpath
+    end
+    
+    def migration_data(head_info, options={})
+      {}.tap do |data|
+        data[Migration::FOLLOWS] = head_info.fetch(MigrationChain::LATEST_CHANGE, Migration::EMPTY_DB)
+        data['sql'] = options.fetch(:sql, "<<<<< INSERT SQL HERE >>>>>\n").dup.extend(LiteralYamlStyle)
+        data['description'] = options.fetch(:description, "<<<<< DESCRIPTION OF MIGRATION >>>>>").dup.extend(FoldedYamlStyle)
+        data[Migration::CHANGES] = options.fetch(:changes, ["<<<<< WHAT THIS MIGRATION CHANGES >>>>>"])
+      end
     end
     
     # Called when the chain of migrations in the production/master branch is

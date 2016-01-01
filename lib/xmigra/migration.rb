@@ -12,22 +12,29 @@ module XMigra
       @id = info['id'].dup.freeze
       _follows = info[FOLLOWS]
       @follows = (_follows.dup.freeze unless _follows == EMPTY_DB)
-      @sql = info["sql"].dup.freeze
+      @sql = info.has_key?('sql') ? info["sql"].dup.freeze : nil
       @description = info["description"].dup.freeze
       @changes = (info[CHANGES] || []).dup.freeze
       @changes.each {|c| c.freeze}
+      @all_info = Marshal.load(Marshal.dump(info))
     end
     
     attr_reader :id, :follows, :description, :changes
     attr_accessor :file_path
     
     def schema_dir
-      Pathname(file_path).dirname.join('..')
+      @schema_dir ||= begin
+        result = Pathname(file_path).dirname
+        while result.basename.to_s != SchemaManipulator::STRUCTURE_SUBDIR
+          result = result.dirname
+        end
+        result.join('..')
+      end
     end
     
     def sql
       if Plugin.active
-        @sql.dup.tap do |result|
+        (@sql || "").dup.tap do |result|
           Plugin.active.amend_source_sql(result)
         end
       else

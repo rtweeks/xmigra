@@ -25,6 +25,20 @@ class Integer
   end
 end
 
+class StandardError
+  def each_causing_exception
+    current = self.safe_cause
+    until current.nil?
+      yield current
+      current = current.safe_cause
+    end
+  end
+  
+  def safe_cause
+    respond_to?(:cause) ? cause : nil
+  end
+end
+
 def do_or_die(command, message=nil, exc_type=Exception)
   output = `#{command}`
   $?.success? || raise(exc_type, message || ("Unable to " + command + "\n" + output))
@@ -38,10 +52,10 @@ def initialize_xmigra_schema(path='.', options={})
   end
 end
 
-def in_xmigra_schema
+def in_xmigra_schema(options={})
   1.temp_dirs do |schema|
     Dir.chdir(schema) do
-      initialize_xmigra_schema
+      initialize_xmigra_schema('.', options)
       yield
     end
   end
@@ -76,3 +90,4 @@ def capture_stdout
     $stdout = old_stdout
   end
 end
+

@@ -8,6 +8,8 @@ require 'tmpdir'
 TESTS = %w[
   git_vcs
   reversions
+  new_files
+  structure_declarative
 ]
 
 $:.unshift Pathname(__FILE__).expand_path.dirname.dirname + 'lib'
@@ -38,7 +40,13 @@ def run_test(name, &block)
   
   $test_count += 1
   
+  msg_receiver, msg_sender = IO.pipe
+  
   if child_pid = Process.fork
+    msg_sender.close
+    
+    # Must read to EOF or child may hang if pipe is filled
+    test_message = msg_receiver.read
     Process.wait(child_pid)
     
     if $?.success?
@@ -48,7 +56,14 @@ def run_test(name, &block)
       print 'F'
       $tests_failed << name
     end
+    
+    if test_message.length > 0
+      ($test_messages ||= {})[name] = test_message
+    end
+    msg_receiver.close
   else
+    msg_receiver.close
+    
     begin
       prev_stdout = $stdout
       $stdout = StringIO.new
@@ -59,11 +74,16 @@ def run_test(name, &block)
       end
       exit! 0
     rescue AssertionFailure
+      msg_sender.puts $!
       exit! 2
     rescue
-      puts
-      puts "Exception: #{$!}"
-      puts $!.backtrace
+      msg_sender.puts "#{$!.class}: #{$!}"
+      msg_sender.puts $!.backtrace
+      $!.each_causing_exception do |ex|
+        msg_sender.puts
+        msg_sender.puts "Caused by #{ex.class}: #{ex}"
+        msg_sender.puts ex.backtrace
+      end
       exit! 1
     end
   end
@@ -96,8 +116,25 @@ def assert_neq(actual, expected)
   assert(proc {"Value #{actual.inspect} was unexpected"}) {actual != expected}
 end
 
+def include_test(container, item)
+  case
+  when item.kind_of?(Regexp) && container.kind_of?(String)
+    item.match container
+  else
+    container.include? item
+  end
+end
+
 def assert_include(container, item)
-  assert(proc {"#{item.inspect} was not in #{container.inspect}"}) {container.include? item}
+  assert(proc {"#{item.inspect} was not in #{container.inspect}"}) do
+    include_test container, item
+  end
+end
+
+def assert_not_include(container, item)
+  assert(proc {"#{item.inspect} was in #{container.inspect}"}) do
+    !include_test container, item
+  end
 end
 
 def assert_raises(expected_exception)
@@ -155,3 +192,11 @@ puts
 puts "#{$test_successes}/#{$test_count} succeeded" if $test_options.show_counts
 puts "Failed tests:" unless $tests_failed.empty?
 $tests_failed.each {|name| puts "    #{name}"}
+
+($test_messages || {}).each_pair do |test_name, message|
+  puts
+  puts "----- #{test_name} -----"
+  message.each_line do |msg_line|
+    puts msg_line.chomp
+  end
+end
