@@ -77,7 +77,7 @@ module XMigra
         )
         case PLATFORM
         when :unix
-          cmd_parts << "2>/dev/null"
+          cmd_parts << "2>#{XMigra::NULL_FILE}"
         end if options[:quiet]
         
         cmd_str = cmd_parts.join(' ')

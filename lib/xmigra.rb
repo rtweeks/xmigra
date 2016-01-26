@@ -181,6 +181,10 @@ module XMigra
   when (RbConfig::CONFIG['host_os'] =~ /mswin|mingw|cygwin/) then :mswin
   else :unix
   end
+  NULL_FILE = case PLATFORM
+  when :mswin then 'NUL'
+  else '/dev/null'
+  end
   
   class Error < RuntimeError; end
   
