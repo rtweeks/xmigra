@@ -31,7 +31,7 @@ module XMigra
         )
         cmd_str = cmd_parts.join(' ')
         
-        output = `#{cmd_str} #{XMigra::NULL_FILE}`
+        output = `#{cmd_str} 2>#{XMigra::NULL_FILE}`
         raise(VersionControlError, "Subversion command failed with exit code #{$?.exitstatus}") unless $?.success?
         return output if raw_result && !no_result
         return REXML::Document.new(output) unless no_result
