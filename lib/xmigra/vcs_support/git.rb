@@ -281,7 +281,10 @@ module XMigra
     def vcs_production_contents(path)
       return nil unless git_master_head(:required => false)
       git_fetch_master_branch
-      git(:show, [git_master_local_branch, git_internal_path].join(':'), :quiet=>true)
+      # Skip the first two characters after the join to leave off the "./" prefix,
+      # which makes git consider the current directory
+      target_path = [git_internal_path, Pathname(path).relative_path_from(self.path)].join('/')[2..-1]
+      git(:show, [git_master_local_branch, target_path].join(':'), :quiet=>true)
     rescue VersionControlError
       return nil
     end
