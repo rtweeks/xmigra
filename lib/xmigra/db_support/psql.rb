@@ -554,7 +554,7 @@ module XMigra
     end
     
     def migration_application_sql
-      PgSQLSpecifics.in_plpgsql %Q{
+      PgSQLSpecifics.in_plpgsql(%Q{
         IF EXISTS (
           SELECT * FROM temp$xmigra_migrations
           WHERE "MigrationID" = '#{id}'
@@ -562,14 +562,15 @@ module XMigra
         ) THEN
           RAISE NOTICE #{PgSQLSpecifics.string_literal %Q{Applying "#{File.basename(file_path)}":}};
           
-          EXECUTE #{PgSQLSpecifics.string_literal sql};
+          EXECUTE
+        %s;
           
           INSERT INTO xmigra.applied ("MigrationID", "Description")
           VALUES ('#{id}', #{PgSQLSpecifics.string_literal description});
           
           RAISE NOTICE '    done';
         END IF;
-      }
+      }) % [PgSQLSpecifics.string_literal(sql)]
     end
     
     def reversion_tracking_sql
