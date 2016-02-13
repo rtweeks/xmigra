@@ -809,3 +809,32 @@ run_test "DeclarativeSupport::Table can alter an existing default constraint on 
     )
   end
 end
+
+run_test "DeclarativeSupport::Table can add a NOT NULL column" do
+  in_xmigra_schema do
+    do_or_die "git init", "Unable to initialize git repository"
+    decl_file = add_foo_declarative
+    do_or_die %Q{git add #{decl_file}}
+    do_or_die %Q{git commit -m "Committing foo"}
+    
+    deserializer = XMigra::ImpdeclMigrationAdder::SupportedObjectDeserializer.new(decl_file.basename('.yaml').to_s, XMigra::PgSQLSpecifics)
+    table_yaml = YAML.parse_file(decl_file)
+    table_old = deserializer.deserialize(table_yaml.children[0])
+    table_new = deserializer.deserialize(table_yaml.children[0])
+    table_new.add_column(
+      'name' => 'damage',
+      'type' => 'float',
+      'nullable' => false,
+    )
+    
+    delta = XMigra::DeclarativeSupport::Table::Delta.new(table_old, table_new)
+    assert_eq(delta.constraints_to_drop, [])
+    assert_eq(delta.new_columns.length, 1)
+    assert_eq(delta.removed_columns, [])
+    assert_eq(delta.new_constraint_sql_clauses, [])
+    assert_eq(delta.altered_column_pairs, [])
+    stmts = table_new.add_table_columns_sql_statements(delta.new_columns)
+    assert_eq(stmts.length, 1)
+    assert_include(stmts[0], /NOT\s+NULL/)
+  end
+end
