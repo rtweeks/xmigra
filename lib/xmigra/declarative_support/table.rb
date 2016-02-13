@@ -410,6 +410,16 @@ END_OF_HELP
         @columns_by_name.has_key? name
       end
       
+      def add_column(colspec)
+        raise "Columns may not be added to the primary key after construction" if colspec['primary key']
+        Column.new(colspec).tap do |col|
+          @columns_by_name[col.name] = col
+          if !(col_default = col.default_constraint).nil?
+            @constraints[col_default.name] = col_default
+          end
+        end
+      end
+      
       def add_default(colname, expression, constr_name=nil)
         col = get_column(colname)
         unless col.default_constraint.nil?
@@ -455,7 +465,7 @@ END_OF_HELP
         
         # Add new columns
         parts.concat add_table_columns_sql_statements(
-          delta.new_columns.lazy.map {|col| [col.name, col.type]}
+          delta.new_columns
         ).to_a
         
         # Alter existing columns
@@ -566,9 +576,9 @@ END_OF_HELP
         end
       end
       
-      def add_table_columns_sql_statements(column_name_type_pairs)
-        column_name_type_pairs.map do |col_name, col_type|
-          "ALTER TABLE #{name} ADD COLUMN #{col_name} #{col_type};"
+      def add_table_columns_sql_statements(columns)
+        columns.map do |col|
+          "ALTER TABLE #{name} ADD COLUMN #{column_creation_sql_fragment(col)};"
         end
       end
       
