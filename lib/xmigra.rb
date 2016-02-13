@@ -346,11 +346,23 @@ module XMigra
         if e.class.const_defined? :COMMAND_LINE_HELP
           STDERR.puts(XMigra.program_message(e.class::COMMAND_LINE_HELP))
         end
+        log_error(e)
         exit(2) if e.is_a?(OptionParser::ParseError)
         exit(2) if e.is_a?(XMigra::Program::ArgumentError)
         exit(1)
       end
     )
+  end
+  
+  def self.log_error(e)
+    if log_file = ENV['XMIGRA_LOG_FILE']
+      Pathname(log_file).open('a') do |log|
+        log.puts "#{Time.now}: #{e} (#{e.class})"
+        e.backtrace.each do |frame|
+          log.puts "    " + frame
+        end
+      end
+    end
   end
 end
 
