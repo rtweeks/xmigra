@@ -293,7 +293,7 @@ module XMigra
       args = []
       
       commit = options.fetch(:revision, 'HEAD')
-      args << "#{commit}:#{path}"
+      args << "#{commit}:./#{path}"
       
       git(:show, *args)
     end
