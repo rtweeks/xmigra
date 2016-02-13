@@ -40,14 +40,20 @@ is a sequence of column names.  Only one primary key constraint may be
 specified, whether through use of "primary key" keys in column mappings or
 explicitly in the "constraints" section.  For foreign key constraint
 definitions, the value of the "columns" key must be a mapping of referring
-column name to referenced column name.  Check constraint definitions must have
-a "verify" key whose value is an SQL expression to be checked for all records.
-Default constraints (when given explicitly) must have a "value" key giving
-the expression (with possible limitations imposed by the database system in
-use) for the default value and an indication of the constrained column: either
-a "column" key giving explicit reference to a column or, if the constraint
-name starts with the implicit prefix, the part of the constraint name after
-the prefix.
+column name to referenced column name and a "link to" key, whose value gives
+the name of the relation referenced, must be given.  Check constraint
+definitions must have a "verify" key whose value is an SQL expression to be
+checked for all records.  Default constraints (when given explicitly) must
+have a "value" key giving the expression (with possible limitations imposed by
+the database system in use) for the default value and an indication of the
+constrained column: either a "column" key giving explicit reference to a
+column or, if the constraint name starts with the implicit prefix, the part of
+the constraint name after the prefix.
+
+In addition to the required keys, foreign key constraints support two optional
+keys: "on update" and "on delete".  These keys support generating "ON UPDATE"
+and "ON DELETE" rules in the foreign key constraint creation SQL.  The value
+associated with the key is used in the SQL.
 
 When specifying SQL expressions in YAML, make sure to use appropriate quoting.
 For example, where apostrophes delimit string literals in SQL and it might be
