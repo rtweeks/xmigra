@@ -215,7 +215,8 @@ module XMigra
       end
     rescue DeclarativeSupport::SpecificationError
       raise
-    rescue StandardError
+    rescue StandardError => e
+      XMigra.log_error(e)
       raise if strict
       nil
     end

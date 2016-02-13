@@ -87,6 +87,7 @@ module XMigra
           result = begin
             yield input_value
           rescue InvalidInput => e
+            XMigra.log_error(e)
             puts e.message if e.explicit_message?
             next
           end

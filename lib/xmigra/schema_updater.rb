@@ -46,7 +46,8 @@ RUNNING THIS SCRIPT ON A PRODUCTION DATABASE WILL FAIL.
         @file_based_groups << [@branch_upgrade] if @branch_upgrade.found?
       rescue Error
         raise
-      rescue StandardError
+      rescue StandardError => e
+        XMigra.log_error(e)
         raise Error, "Error initializing #{self.class} components"
       end
       
