@@ -361,6 +361,13 @@ module XMigra
         e.backtrace.each do |frame|
           log.puts "    " + frame
         end
+        
+        while e.respond_to?(:cause) && e = e.cause
+          log.puts "  Caused by: #{e} (#{e.class})"
+          e.backtrace.each do |frame|
+            log.puts "    " + frame
+          end
+        end
       end
     end
   end
