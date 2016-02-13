@@ -319,7 +319,7 @@ module XMigra
     end
     
     def vcs_uncommitted?
-      git_status == '??'
+      git_status == '??' || git_status[0] == 'A'
     end
     
     class VersionComparator

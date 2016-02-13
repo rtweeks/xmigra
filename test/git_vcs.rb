@@ -328,4 +328,29 @@ if GIT_PRESENT
       end
     end
   end
+  
+  run_test "XMigra recognizes files with changes in the index as uncommitted" do
+    test_object = Class.new do
+      include XMigra::GitSpecifics
+      def file_path
+        Pathname('foo.txt')
+      end
+    end.new
+    
+    1.temp_dirs do |repo|
+      initialize_git_repo(repo)
+      
+      Dir.chdir(repo) do
+        test_object.file_path.open('w') do |file|
+          file.puts 'bar'
+        end
+        
+        do_or_die %Q{git add #{test_object.file_path}}
+        
+        assert_eq(test_object.git_status, 'A ')
+        
+        assert {test_object.vcs_uncommitted?} # After add
+      end
+    end
+  end
 end
