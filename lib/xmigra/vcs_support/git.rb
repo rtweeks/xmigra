@@ -352,6 +352,11 @@ module XMigra
           
           return :older
         elsif a_status == '  '
+          # Look for re-introduction of a declarative that was previously destroyed or renounced
+          if (b_status == '??' || b_status[0] == 'A') && [:renunciation, :destruction].include?(@object.goal)
+            return :unimplemented
+          end
+          
           return :newer unless b_status == '  '
           
           return begin

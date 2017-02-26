@@ -257,6 +257,11 @@ END_OF_MESSAGE
           
           return :older
         elsif a_status.attributes['item'] == 'normal'
+          # Look for re-introduction of a declarative that was previously destroyed or renounced
+          if (['unversioned', 'added'].include? b_status.attributes['item']) && [:renunciation, :destruction].include?(@object.goal)
+            return :unimplemented
+          end
+          
           return :newer unless b_status.attributes['item'] == 'normal'
           
           return begin
