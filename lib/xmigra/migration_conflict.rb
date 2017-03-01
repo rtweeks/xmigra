@@ -71,7 +71,7 @@ module XMigra
       # Update the latest implementing migration for any declarative
       # file that is modified in the working copy
       each_decohered_implementing_migration(
-        &method(:fix_decohered_implmeneting_migration!)
+        &method(:fix_decohered_implementing_migration!)
       )
     end
     
@@ -80,14 +80,16 @@ module XMigra
       latest_impls = tool.migrations.latest_declarative_implementations
       latest_impls.each_pair do |decl_file, migration|
         next unless tool.vcs_file_modified?(decl_file)
+        next if tool.vcs_file_modified?(migration.file_path)
         yield migration.file_path, tool.vcs_latest_revision(migration.file_path)
       end
     end
     
-    def fix_decohered_implmeneting_migration!(file_path, last_commit)
+    def fix_decohered_implementing_migration!(file_path, last_commit)
       migration_info = YAML.load_file(file_path)
+      last_commit = "nonexistent" if last_commit.nil? || last_commit.empty?
       migration_info['pre-unbranch'] = last_commit
-      file_path.open('w') do |f|
+      Pathname(file_path).open('w') do |f|
         $xmigra_yamler.dump(migration_info, f)
       end
     end

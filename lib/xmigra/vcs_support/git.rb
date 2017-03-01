@@ -90,7 +90,7 @@ module XMigra
         end
         return ($?.success? ? output : nil) if options[:get_result] == :on_success
         return $?.success? if check_exit
-        raise(VersionControlError, "Git command failed with exit code #{$?.exitstatus}") unless $?.success?
+        raise(VersionControlError, "Git command failed with exit code #{$?.exitstatus}\n        Command: #{cmd_str}") unless $?.success?
         return output unless no_result
       end
       
@@ -427,6 +427,11 @@ module XMigra
       git(:show, "HEAD:#{file_path}", :quiet=>true)
     end
     
+    def vcs_file_modified?(file_path)
+      gstat = git_retrieve_status(file_path)
+      gstat[0] != ' '
+    end
+    
     def git_status
       @git_status ||= git_retrieve_status(file_path)
     end
@@ -461,15 +466,16 @@ module XMigra
       return nil unless stage_numbers.sort == [1, 2, 3]
       
       chain_head = lambda do |stage_number|
+        head_file_relative = head_file.relative_path_from(self.path)
         return YAML.parse(
-          git(:show, ":#{stage_number}:#{head_file}")
+          git(:show, ":#{stage_number}:./#{head_file_relative}")
         ).transform
       end
       
       # Ours (2) before theirs (3)...
       heads = [2, 3].collect(&chain_head)
-      # ... unless merging from upstream
-      if self.git_merging_from_upstream?
+      # ... unless merging from upstream or the master branch
+      if self.git_merging_from_upstream? || self.git_merging_from_master?
         heads.reverse!
       end
       
@@ -568,6 +574,13 @@ module XMigra
       rescue VersionControlError
         return false
       end
+    end
+    
+    def git_merging_from_master?
+      git_fetch_master_branch
+      return !(self.git_commits_in? git_master_local_branch..'MERGE_HEAD')
+    rescue VersionControlError
+      return false
     end
     
     def git_commits_in?(range, path=nil)
