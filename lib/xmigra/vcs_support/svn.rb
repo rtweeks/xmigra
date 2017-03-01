@@ -227,6 +227,11 @@ END_OF_MESSAGE
       status.nil? || status.attributes['item'] == 'unversioned'
     end
     
+    def vcs_file_modified?(file_path)
+      status = subversion_retrieve_status(file_path).elements['entry/wc-status']
+      !status.nil? && status.attributes['item'] == 'modified'
+    end
+    
     class VersionComparator
       # vcs_object.kind_of?(SubversionSpecifics)
       def initialize(vcs_object, options={})

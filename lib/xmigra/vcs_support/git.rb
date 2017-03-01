@@ -427,6 +427,11 @@ module XMigra
       git(:show, "HEAD:#{file_path}", :quiet=>true)
     end
     
+    def vcs_file_modified?(file_path)
+      gstat = git_retrieve_status(file_path)
+      gstat[0] != ' '
+    end
+    
     def git_status
       @git_status ||= git_retrieve_status(file_path)
     end
