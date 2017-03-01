@@ -15,7 +15,7 @@ module XMigra
       raise(XMigra::Error, "Index \"#{new_fpath.basename}\" already exists") if new_fpath.exist?
       
       index_creation_template = begin
-        index_template_sql
+        index_template_sql.gsub('[{filename}]', name)
       rescue NameError
         ''
       end
