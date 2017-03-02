@@ -227,6 +227,11 @@ END_OF_MESSAGE
       status.nil? || status.attributes['item'] == 'unversioned'
     end
     
+    def vcs_file_modified?(file_path)
+      status = subversion_retrieve_status(file_path).elements['entry/wc-status']
+      !status.nil? && status.attributes['item'] == 'modified'
+    end
+    
     class VersionComparator
       # vcs_object.kind_of?(SubversionSpecifics)
       def initialize(vcs_object, options={})
@@ -257,6 +262,11 @@ END_OF_MESSAGE
           
           return :older
         elsif a_status.attributes['item'] == 'normal'
+          # Look for re-introduction of a declarative that was previously destroyed or renounced
+          if (['unversioned', 'added'].include? b_status.attributes['item']) && [:renunciation, :destruction].include?(@object.goal)
+            return :unimplemented
+          end
+          
           return :newer unless b_status.attributes['item'] == 'normal'
           
           return begin

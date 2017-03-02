@@ -17,6 +17,7 @@ module XMigra
         begin
           verinc_info = YAML.load_file(path)
         rescue Error => e
+          XMigra.log_error(e)
           warning "Failed to load branch upgrade migration (#{e.class}).\n  #{e}"
           verinc_info = {}
         end
