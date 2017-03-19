@@ -354,6 +354,7 @@ module XMigra
             (
               SELECT "ApplicationOrder" FROM xmigra.applied
               ORDER BY "ApplicationOrder" DESC
+              LIMIT 1
             ),
             0
           ),
