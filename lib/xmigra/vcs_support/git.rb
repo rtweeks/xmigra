@@ -197,19 +197,19 @@ module XMigra
       
       git_fetch_master_branch
       migrations.each do |m|
-        # Check that the migration has not changed in the currently checked-out branch
+        # Check that the migration in the working tree is the same as in head of the central master branch
         fpath = m.file_path
-        
-        history = git(:log, %w{--format=%H --}, fpath).split
-        if history[1]
-          raise VersionControlError, "'#{fpath}' has been modified in the current branch of the repository since its introduction"
+        unless git(:diff, '--exit-code', self.git_master_local_branch, '--', fpath, check_exit: true)
+          master_url, remote_branch = self.git_master_head.split('#', 2)
+          raise VersionControlError, "'#{fpath}' is different locally than on '#{remote_branch}' in #{master_url}"
         end
       end
       
       # Since a production script was requested, warn if we are not generating
       # from a production branch
       if branch_use != :production
-        raise VersionControlError, "The working tree is not a commit in the master history."
+        master_url, remote_branch = self.git_master_head.split('#', 2)
+        raise VersionControlError, "The working tree is not a commit in the history of '#{remote_branch}' in #{master_url}"
       end
     end
     
