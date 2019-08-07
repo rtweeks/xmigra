@@ -241,8 +241,9 @@ module XMigra
         IF EXISTS(
           SELECT * FROM xmigra.branch_upgrade LIMIT 1
         ) AND NOT EXISTS(
-          SELECT * FROM xmigra.branch_upgrade LIMIT 1
+          SELECT * FROM xmigra.branch_upgrade
           WHERE #{branch_id_literal} IN ("Current", "Next")
+          LIMIT 1
         ) THEN
           RAISE EXCEPTION 'Existing database is from a different (and non-upgradable) branch.';
         END IF;
