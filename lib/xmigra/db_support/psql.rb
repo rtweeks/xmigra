@@ -669,7 +669,7 @@ module XMigra
           WHERE bu."Next" = #{branch_id_literal}
           ORDER BY bu."ApplicationOrder" ASC
           LOOP
-            EXECUTE UpgradeCommads;
+            EXECUTE UpgradeCommands;
           END LOOP;
         
           SELECT "CompletesMigration" AS applied, "Current" AS old_branch
