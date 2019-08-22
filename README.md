@@ -1,14 +1,13 @@
 # XMigra [![Gem Version](https://badge.fury.io/rb/xmigra.svg)](http://badge.fury.io/rb/xmigra)
 
-The world of persistent data is a wild and wooly place.  Let XMigra make it
-easier!
+DevOps tool for your relational database
 
 ## What Does It Do?
 
 * Integrates version control with database schema management.
 * Enhances access artifact (stored procedure, view, and user defined function) 
   development:
-    * Allows each artifact to be defined in a separate file, allowing easy
+    * Allows each artifact to be defined in a separate file, giving easy
       access to version history.
     * Scripts artifact definitions in order (and removal in reverse order) by
       declared dependencies.
@@ -28,11 +27,14 @@ easier!
   you don't have to learn a whole new language to define your schema objects!
 * Provides tools for gathering information on the history of migration-modified
   database objects (tables, namespaces, etc.).
+* Allows tracking table structures declaratively, even suggesting SQL to effect
+  supported changes to tables, which can integrate with database access layer
+  testing.
 
 ## What Systems Does It Work With?
 
 **Ruby**
-* Versions 1.8.7, 1.9, 2.0, and 2.1
+* Versions 2.0+
 
 **Version Control**
 * Subversion
@@ -67,7 +69,8 @@ XMigra has a modular design, allowing extension to additional version control
 and database systems with only minor, if any, changes to the central framework.
 
 Get the code and run `xmigra overview` for the tool's own rundown on
-all of its exciting features.
+all of its exciting features. The wiki for this project also contains a [fairly
+comprehensive tutorial](https://github.com/rtweeks/xmigra/wiki/Tutorial).
 
 ## Installation
 
